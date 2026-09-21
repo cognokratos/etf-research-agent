@@ -421,6 +421,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "etf-mcp-server"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "chrono",
+ "hmac 0.12.1",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "event-listener"
 version = "5.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1812,27 +1833,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "tickets-mcp-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "chrono",
- "hmac 0.12.1",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlx",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

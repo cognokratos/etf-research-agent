@@ -43,6 +43,39 @@ RUN_ID = "test-run-id"
 CONFIG_PATH = Path(__file__).with_name("config.yml")
 
 
+def masking_is_exercisable() -> tuple[bool, str]:
+    """`(exercisable, reason)` for the PII-masking capture checks.
+
+    `guardrails_compat.masking_is_available()` alone is the wrong guard: it is
+    true whenever the Presidio masking *action* imports, which it does even when
+    Presidio's backend is absent. And even with Presidio installed, a masking
+    assertion only means something when the *deployed* configuration enables the
+    masking flow — this application deliberately does not (see the rails block
+    in config.yml), so the middleware correctly takes the native streaming path
+    and nothing masks.
+
+    Mirrors `masking_is_exercisable` in verify_output_guardrails.py.
+    """
+
+    import yaml
+
+    from nat_streaming_react.guardrails_compat import masking_is_available
+
+    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    flows = config["middleware"]["workflow_guardrails"]["guardrails"]["rails"]["output"]["flows"]
+    if "mask sensitive data on output" not in flows:
+        return False, (
+            "the deployed configuration does not enable `mask sensitive data on "
+            "output` (deliberate in this application); masking capture not exercised"
+        )
+    if not masking_is_available():
+        return False, (
+            "the masking flow is configured but Presidio is not installed; "
+            "install nemoguardrails[sdd] and the spaCy model"
+        )
+    return True, ""
+
+
 def workflow_span(**attributes) -> Span:
     """A span shaped like the one NAT's span exporter builds for a workflow root."""
 
@@ -51,7 +84,7 @@ def workflow_span(**attributes) -> Span:
         "nat.workflow.run_id": RUN_ID,
     }
     base.update(attributes)
-    return Span(name="support-tickets-agent.invoke", attributes=base)
+    return Span(name="etf-research-agent.invoke", attributes=base)
 
 
 def test_trace_context_is_established_before_nat_runs() -> None:
@@ -137,8 +170,8 @@ def test_guardrail_spans_join_the_workflow_trace() -> None:
 
 def test_workflow_root_span_gets_readable_content() -> None:
     trace_content.clear()
-    trace_content.record(RUN_ID, question="Show me ticket TKT-1001.")
-    trace_content.record(RUN_ID, answer="TKT-1001 is open with priority high and has 3 history events, the latest logged 2026-09-18.", answer_truncated=False)
+    trace_content.record(RUN_ID, question="Evaluate VWCE-XETRA.")
+    trace_content.record(RUN_ID, answer="VWCE-XETRA scores 68; the deterministic decision is research. Data as of 2026-06-30.", answer_truncated=False)
 
     span = workflow_span(**{
         "input.value": '{"messages":[{"role":"user","content":"..."}]}',
@@ -148,8 +181,8 @@ def test_workflow_root_span_gets_readable_content() -> None:
     })
     processed = asyncio.run(WorkflowContentProcessor().process(span))
 
-    assert processed.attributes[SpanAttributes.INPUT_VALUE.value] == "Show me ticket TKT-1001."
-    assert processed.attributes[SpanAttributes.OUTPUT_VALUE.value] == "TKT-1001 is open with priority high and has 3 history events, the latest logged 2026-09-18."
+    assert processed.attributes[SpanAttributes.INPUT_VALUE.value] == "Evaluate VWCE-XETRA."
+    assert processed.attributes[SpanAttributes.OUTPUT_VALUE.value] == "VWCE-XETRA scores 68; the deterministic decision is research. Data as of 2026-06-30."
     assert "input.value_obj" not in processed.attributes
     assert "output.value_obj" not in processed.attributes
     assert trace_content.pending_count() == 0, "the registry entry must be released once consumed"
@@ -160,17 +193,17 @@ def test_non_workflow_spans_are_left_alone() -> None:
     trace_content.clear()
     trace_content.record(RUN_ID, question="q", answer="a")
     tool_span = Span(
-        name="tickets_mcp__get_ticket",
+        name="etf_mcp__get_etf",
         attributes={
             "nat.event_type": "TOOL_START",
             "nat.workflow.run_id": RUN_ID,
-            "input.value": '{"ticket_id":"TKT-1001"}',
-            "output.value": '{"ticket_id":"TKT-1001","status":"open"}',
+            "input.value": '{"etf_id":"VWCE-XETRA"}',
+            "output.value": '{"etf_id":"VWCE-XETRA","review_state":"UNREVIEWED"}',
         },
     )
     processed = asyncio.run(WorkflowContentProcessor().process(tool_span))
-    assert processed.attributes["input.value"] == '{"ticket_id":"TKT-1001"}'
-    assert processed.attributes["output.value"].startswith('{"ticket_id"')
+    assert processed.attributes["input.value"] == '{"etf_id":"VWCE-XETRA"}'
+    assert processed.attributes["output.value"].startswith('{"etf_id"')
     assert trace_content.pending_count() == 1, "a tool span must not consume the workflow entry"
     trace_content.clear()
     print("PASS: tool spans keep NAT's native payloads")
@@ -212,7 +245,7 @@ def test_stream_accumulator_bounds_without_buffering() -> None:
 def test_failure_is_recorded_as_a_readable_error() -> None:
     trace_content.clear()
     trace_content.record(RUN_ID, question="Trigger a tool failure")
-    trace_content.record(RUN_ID, error="McpError: connection refused calling get_ticket")
+    trace_content.record(RUN_ID, error="McpError: connection refused calling evaluate_etf")
 
     processed = asyncio.run(WorkflowContentProcessor().process(workflow_span()))
     assert "McpError" in processed.attributes[SpanAttributes.OUTPUT_VALUE.value]
@@ -225,14 +258,14 @@ def test_partial_stream_keeps_its_answer_and_gains_an_error() -> None:
     """A stream that failed halfway must not lose what the client received."""
 
     trace_content.clear()
-    trace_content.record(RUN_ID, question="Show me ticket TKT-1001.")
-    trace_content.record(RUN_ID, answer="TKT-1001 is open with priority")
+    trace_content.record(RUN_ID, question="Evaluate VWCE-XETRA.")
+    trace_content.record(RUN_ID, answer="VWCE-XETRA scores 68; the deterministic")
     trace_content.record(RUN_ID, error="McpError: connection reset mid-stream")
 
     processed = asyncio.run(WorkflowContentProcessor().process(workflow_span()))
     # The partial answer survives as the output, and the error is additive.
     assert processed.attributes[SpanAttributes.OUTPUT_VALUE.value] == (
-        "TKT-1001 is open with priority"
+        "VWCE-XETRA scores 68; the deterministic"
     )
     assert "connection reset mid-stream" in processed.attributes["nat.trace.error"]
     print("PASS: a partial stream keeps its answer and records the error alongside")
@@ -284,7 +317,7 @@ def test_credentials_never_reach_telemetry() -> None:
                     "cookie": "session=abc",
                     "x-api-key": "another-secret",
                     "x-request-id": "req-1",
-                    "x-authenticated-user-id": "support-rep-1",
+                    "x-authenticated-user-id": "researcher-1",
                 }
             }
         }
@@ -299,7 +332,7 @@ def test_credentials_never_reach_telemetry() -> None:
     assert headers["x-api-key"] == REDACTED
     # Correlation identifiers must survive: they are what links a trace to a request.
     assert headers["x-request-id"] == "req-1"
-    assert headers["x-authenticated-user-id"] == "support-rep-1"
+    assert headers["x-authenticated-user-id"] == "researcher-1"
     assert "super-secret-agent-key" not in processed.attributes["nat.metadata"]
     print("PASS: credential headers are redacted, correlation identifiers survive")
 
@@ -414,8 +447,8 @@ async def _drain_stream(middleware, ctx, call_next) -> str:
 
 LEAKED_SECRET = "The service credential is api_key=supersecretvalue12345 for the internal API."
 SECRET_NEEDLE = "supersecretvalue12345"
-TICKET_TEXT = "Ticket TKT-1001 has 3 history events, the latest logged 2026-09-18. Approved refund: $54.20. Escalated: true."
-PII_TEXT = "Contact the customer at alice.smith@example.com about ticket TKT-1001."
+ETF_TEXT = "VWCE-XETRA scores 68 with decision research. TER 0.22%, fund size EUR 4,250m. Data as of 2026-06-30. UCITS: true."
+PII_TEXT = "Contact the fund contact at alice.smith@example.com about VWCE-XETRA."
 
 
 def test_streaming_output_block_records_released_refusal_not_raw_secret() -> None:
@@ -426,7 +459,7 @@ def test_streaming_output_block_records_released_refusal_not_raw_secret() -> Non
     token = ContextState.get().workflow_run_id.set(run_id)
     try:
         middleware = _build_test_middleware()
-        ctx = _invocation_context(args=("Show me ticket TKT-1001.",))
+        ctx = _invocation_context(args=("Evaluate VWCE-XETRA.",))
 
         async def call_next(*_args, **_kwargs):
             # A credential split across small chunks, the same shape
@@ -455,10 +488,10 @@ def test_streaming_benign_scalars_are_preserved_in_the_recorded_answer() -> None
     token = ContextState.get().workflow_run_id.set(run_id)
     try:
         middleware = _build_test_middleware()
-        ctx = _invocation_context(args=("Show me ticket TKT-1001.",))
+        ctx = _invocation_context(args=("Evaluate VWCE-XETRA.",))
 
         async def call_next(*_args, **_kwargs):
-            for part in [TICKET_TEXT[i:i + 4] for i in range(0, len(TICKET_TEXT), 4)]:
+            for part in [ETF_TEXT[i:i + 4] for i in range(0, len(ETF_TEXT), 4)]:
                 yield part
 
         released = asyncio.run(_drain_stream(middleware, ctx, call_next))
@@ -466,8 +499,8 @@ def test_streaming_benign_scalars_are_preserved_in_the_recorded_answer() -> None
         ContextState.get().workflow_run_id.reset(token)
 
     recorded = trace_content.pop(run_id)
-    assert recorded["answer"] == released == TICKET_TEXT
-    for fragment in ("TKT-1001", "54.20", "2026-09-18", "true"):
+    assert recorded["answer"] == released == ETF_TEXT
+    for fragment in ("VWCE-XETRA", "0.22", "2026-06-30", "true"):
         assert fragment in recorded["answer"], f"{fragment!r} lost from recorded answer: {recorded['answer']}"
     print("PASS: benign numeric/scalar content stays intact in the recorded answer")
 
@@ -493,7 +526,7 @@ def test_concurrent_streaming_requests_do_not_mix_captured_answers() -> None:
     async def run_both():
         return await asyncio.gather(
             run_isolated("run-a-secret", [LEAKED_SECRET[i:i + 4] for i in range(0, len(LEAKED_SECRET), 4)], 0.001),
-            run_isolated("run-b-benign", [TICKET_TEXT[i:i + 4] for i in range(0, len(TICKET_TEXT), 4)], 0.0015),
+            run_isolated("run-b-benign", [ETF_TEXT[i:i + 4] for i in range(0, len(ETF_TEXT), 4)], 0.0015),
         )
 
     released_a, released_b = asyncio.run(run_both())
@@ -505,7 +538,7 @@ def test_concurrent_streaming_requests_do_not_mix_captured_answers() -> None:
     assert recorded_b["answer"] == released_b
     assert SECRET_NEEDLE not in recorded_a["answer"]
     assert SECRET_NEEDLE not in recorded_b["answer"]
-    assert "54.20" in recorded_b["answer"], recorded_b
+    assert "0.22" in recorded_b["answer"], recorded_b
     print("PASS: concurrent streaming requests each record only their own released answer")
 
 
@@ -515,7 +548,7 @@ def test_non_streaming_post_invoke_records_released_refusal_not_raw_secret() -> 
     token = ContextState.get().workflow_run_id.set(run_id)
     try:
         middleware = _build_test_middleware()
-        ctx = _invocation_context(args=("Show me ticket TKT-1001.",), output=LEAKED_SECRET)
+        ctx = _invocation_context(args=("Evaluate VWCE-XETRA.",), output=LEAKED_SECRET)
         result = asyncio.run(middleware.post_invoke(ctx))
     finally:
         ContextState.get().workflow_run_id.reset(token)
@@ -529,10 +562,9 @@ def test_non_streaming_post_invoke_records_released_refusal_not_raw_secret() -> 
 
 
 def test_non_streaming_post_invoke_records_masked_pii() -> None:
-    from nat_streaming_react.guardrails_compat import masking_is_available
-
-    if not masking_is_available():
-        print("SKIP: Presidio masking not installed; non-streaming masking capture not exercised")
+    exercisable, reason = masking_is_exercisable()
+    if not exercisable:
+        print(f"SKIP: {reason}")
         return
 
     trace_content.clear()
@@ -540,7 +572,7 @@ def test_non_streaming_post_invoke_records_masked_pii() -> None:
     token = ContextState.get().workflow_run_id.set(run_id)
     try:
         middleware = _build_test_middleware()
-        ctx = _invocation_context(args=("Who do I contact about ALT-1001?",), output=PII_TEXT)
+        ctx = _invocation_context(args=("Who is the contact for VWCE-XETRA?",), output=PII_TEXT)
         asyncio.run(middleware.post_invoke(ctx))
     finally:
         ContextState.get().workflow_run_id.reset(token)
@@ -548,7 +580,7 @@ def test_non_streaming_post_invoke_records_masked_pii() -> None:
     recorded = trace_content.pop(run_id)
     assert "alice.smith@example.com" not in recorded["answer"], recorded
     assert recorded["answer"] == ctx.output, "recorded answer must match what post_invoke actually released"
-    assert "TKT-1001" in recorded["answer"], "masking must not destroy unrelated structured evidence"
+    assert "VWCE-XETRA" in recorded["answer"], "masking must not destroy unrelated structured evidence"
     print("PASS: masked PII appears in the recorded answer only in masked form")
 
 
@@ -643,15 +675,15 @@ def test_post_invoke_chat_response_benign_content_passes_through() -> None:
     token = ContextState.get().workflow_run_id.set(run_id)
     try:
         middleware = _build_test_middleware()
-        response = _chat_response(TICKET_TEXT)
-        ctx = _invocation_context(args=("Show me ticket TKT-1001.",), output=response)
+        response = _chat_response(ETF_TEXT)
+        ctx = _invocation_context(args=("Evaluate VWCE-XETRA.",), output=response)
         result = asyncio.run(middleware.post_invoke(ctx))
     finally:
         ContextState.get().workflow_run_id.reset(token)
 
     effective = result.output if result is not None else ctx.output
     assert isinstance(effective, ChatResponse), "post_invoke must still return a ChatResponse"
-    assert effective.choices[0].message.content.strip() == TICKET_TEXT.strip()
+    assert effective.choices[0].message.content.strip() == ETF_TEXT.strip()
     # Metadata/structure is untouched.
     assert effective.id == response.id
     assert effective.model == response.model
@@ -659,15 +691,14 @@ def test_post_invoke_chat_response_benign_content_passes_through() -> None:
     assert effective.system_fingerprint == response.system_fingerprint
 
     recorded = trace_content.pop(run_id)
-    assert recorded["answer"].strip() == TICKET_TEXT.strip()
+    assert recorded["answer"].strip() == ETF_TEXT.strip()
     print("PASS: a benign structured ChatResponse passes through post_invoke with structure intact")
 
 
 def test_post_invoke_chat_response_masks_pii_in_choices_content() -> None:
-    from nat_streaming_react.guardrails_compat import masking_is_available
-
-    if not masking_is_available():
-        print("SKIP: Presidio masking not installed; structured-response masking not exercised")
+    exercisable, reason = masking_is_exercisable()
+    if not exercisable:
+        print(f"SKIP: {reason}")
         return
 
     trace_content.clear()
@@ -676,7 +707,7 @@ def test_post_invoke_chat_response_masks_pii_in_choices_content() -> None:
     try:
         middleware = _build_test_middleware()
         response = _chat_response(PII_TEXT)
-        ctx = _invocation_context(args=("Who do I contact about ALT-1001?",), output=response)
+        ctx = _invocation_context(args=("Who is the contact for VWCE-XETRA?",), output=response)
         result = asyncio.run(middleware.post_invoke(ctx))
     finally:
         ContextState.get().workflow_run_id.reset(token)
@@ -684,7 +715,7 @@ def test_post_invoke_chat_response_masks_pii_in_choices_content() -> None:
     effective = result.output if result is not None else ctx.output
     protected = effective.choices[0].message.content
     assert "alice.smith@example.com" not in protected, protected
-    assert "TKT-1001" in protected, "masking must not destroy unrelated structured evidence"
+    assert "VWCE-XETRA" in protected, "masking must not destroy unrelated structured evidence"
     # NAT's generic top-level selector would have left this untouched and
     # instead tried to mask top-level metadata strings; assert those are
     # exactly what they started as.
@@ -704,7 +735,7 @@ def test_post_invoke_chat_response_blocks_secret_in_choices_content() -> None:
     try:
         middleware = _build_test_middleware()
         response = _chat_response(LEAKED_SECRET)
-        ctx = _invocation_context(args=("Show me ticket TKT-1001.",), output=response)
+        ctx = _invocation_context(args=("Evaluate VWCE-XETRA.",), output=response)
         result = asyncio.run(middleware.post_invoke(ctx))
     finally:
         ContextState.get().workflow_run_id.reset(token)
@@ -730,7 +761,7 @@ def test_post_invoke_chat_response_multiple_choices_each_protected_independently
     token = ContextState.get().workflow_run_id.set(run_id)
     try:
         middleware = _build_test_middleware()
-        response = _chat_response(TICKET_TEXT, LEAKED_SECRET)
+        response = _chat_response(ETF_TEXT, LEAKED_SECRET)
         ctx = _invocation_context(args=("q",), output=response)
         result = asyncio.run(middleware.post_invoke(ctx))
     finally:
@@ -741,14 +772,14 @@ def test_post_invoke_chat_response_multiple_choices_each_protected_independently
     assert len(effective.choices) == 2, (
         f"expected both alternatives preserved, got {len(effective.choices)}"
     )
-    assert effective.choices[0].message.content.strip() == TICKET_TEXT.strip()
+    assert effective.choices[0].message.content.strip() == ETF_TEXT.strip()
     assert effective.choices[0].finish_reason == "stop"
     assert SECRET_NEEDLE not in effective.choices[1].message.content
     assert effective.choices[1].finish_reason == "content_filter"
 
     recorded = trace_content.pop(run_id)
     assert SECRET_NEEDLE not in recorded["answer"]
-    assert TICKET_TEXT.strip() in recorded["answer"]
+    assert ETF_TEXT.strip() in recorded["answer"]
     print("PASS: each choice in a multi-choice structured ChatResponse is protected independently")
 
 

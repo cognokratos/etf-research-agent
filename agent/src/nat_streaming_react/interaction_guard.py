@@ -61,7 +61,7 @@ Fail-closed, with one deliberate exception
 ------------------------------------------
 An interaction this guard never saw created (NAT's own OAuth consent flow, for
 instance) has no recorded owner. Those are allowed through and logged, because
-refusing them would break a NAT feature this template does not otherwise touch.
+refusing them would break a NAT feature this application does not otherwise touch.
 Every interaction created by ``nat_streaming_react.approval`` *is* recorded, so
 the approval path is never in that category. ``strict`` makes even the unknown
 case fail closed, for a deployment that uses no other interaction type.

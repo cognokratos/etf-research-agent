@@ -7,27 +7,25 @@
 # `-p`, the environment variable, or this file default, in that order — back
 # into `${COMPOSE_PROJECT_NAME}` for the rest of this file, and every
 # persistent volume below keys its own default off that same resolved value
-# (see the `volumes:` section). That is what lets two clones of this template
-# (or a template checkout and a domain fork) run side by side on one Docker
-# host with genuinely separate storage, not just separate containers.
-name: ${COMPOSE_PROJECT_NAME:-tickets-agent}
+# (see the `volumes:` section). That is what lets two clones of this project
+# (or this application and the template it is built on) run side by side on one
+# Docker host with genuinely separate storage, not just separate containers.
+name: ${COMPOSE_PROJECT_NAME:-etf-research-agent}
 
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-tickets}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tickets}
-      POSTGRES_DB: ${POSTGRES_DB:-tickets}
+      POSTGRES_USER: ${POSTGRES_USER:-etf_research}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etf_research}
+      POSTGRES_DB: ${POSTGRES_DB:-etf_research}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
-      - ./db/guardrail_test_fixtures.sql:/docker-entrypoint-initdb.d/002-guardrail-test-fixtures.sql:ro
-      - ./db/injection_test_fixtures.sql:/docker-entrypoint-initdb.d/003-injection-test-fixtures.sql:ro
     networks:
       - data_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tickets} -d ${POSTGRES_DB:-tickets}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etf_research} -d ${POSTGRES_DB:-etf_research}"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -37,13 +35,13 @@ services:
     image: python:3.12-alpine
     command: ["python", "/config/generate_realm.py"]
     environment:
-      KEYCLOAK_REALM_OUTPUT: /import/tickets-realm.json
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-tickets}
-      KEYCLOAK_GATEWAY_CLIENT_ID: ${KEYCLOAK_GATEWAY_CLIENT_ID:-tickets-gateway}
+      KEYCLOAK_REALM_OUTPUT: /import/etf-research-realm.json
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-etf-research}
+      KEYCLOAK_GATEWAY_CLIENT_ID: ${KEYCLOAK_GATEWAY_CLIENT_ID:-etf-research-gateway}
       KEYCLOAK_GATEWAY_CLIENT_SECRET: ${KEYCLOAK_GATEWAY_CLIENT_SECRET:-dev-gateway-client-secret-change-me}
-      KEYCLOAK_AGENT_USERNAME: ${KEYCLOAK_AGENT_USERNAME:-agent}
-      KEYCLOAK_AGENT_PASSWORD: ${KEYCLOAK_AGENT_PASSWORD:-agent}
-      KEYCLOAK_AGENT_EMAIL: ${KEYCLOAK_AGENT_EMAIL:-agent@example.test}
+      KEYCLOAK_RESEARCHER_USERNAME: ${KEYCLOAK_RESEARCHER_USERNAME:-researcher}
+      KEYCLOAK_RESEARCHER_PASSWORD: ${KEYCLOAK_RESEARCHER_PASSWORD:-researcher}
+      KEYCLOAK_RESEARCHER_EMAIL: ${KEYCLOAK_RESEARCHER_EMAIL:-researcher@example.test}
       OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:3000/api/gateway/auth/callback}
       UI_PUBLIC_URL: ${UI_PUBLIC_URL:-http://localhost:3000}
     volumes:
@@ -96,16 +94,24 @@ services:
     build:
       context: ./mcp-server
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-tickets}:${POSTGRES_PASSWORD:-tickets}@postgres:5432/${POSTGRES_DB:-tickets}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-etf_research}:${POSTGRES_PASSWORD:-etf_research}@postgres:5432/${POSTGRES_DB:-etf_research}
       MCP_BIND_ADDRESS: 0.0.0.0:8080
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp-server,mcp-server:8080,localhost,localhost:8080,127.0.0.1,127.0.0.1:8080,::1}
       MCP_API_KEY: ${MCP_API_KEY:-dev-mcp-api-key-change-me}
-      # Optional human-approval feature. UNSET by default, and that is what keeps
-      # this server read-only: with no secret it routes no execution endpoint, so
-      # there is no mutation surface rather than a disabled one. Must be >= 24
-      # characters and identical to the agent's. See docs/APPROVALS.md.
-      HITL_APPROVAL_SECRET: ${HITL_APPROVAL_SECRET-}
-      RUST_LOG: ${RUST_LOG:-tickets_mcp_server=info,rmcp=info}
+      # REQUIRED, unlike in the template this is built on: recording an
+      # approved decision is this application's purpose, so the server refuses
+      # to start without a secret rather than running as a read-only variant.
+      # Must be >= 24 characters and identical to the agent's. See
+      # docs/APPROVALS.md.
+      HITL_APPROVAL_SECRET: ${HITL_APPROVAL_SECRET:-dev-hitl-approval-secret-change-me-32chars}
+      # The deterministic engine's inputs, validated at boot: an inconsistent
+      # specification stops the service rather than silently rescoring.
+      RULES_SPEC_PATH: /app/data/rules_spec.json
+      ETFS_DATA_PATH: /app/data/etfs.json
+      INVESTOR_PROFILE_PATH: /app/data/investor_profile.json
+      RUST_LOG: ${RUST_LOG:-etf_mcp_server=info,rmcp=info}
+    volumes:
+      - ./data:/app/data:ro
     networks:
       - mcp_net
       - data_net
@@ -218,7 +224,7 @@ services:
         AGENT_BUILD_COMMIT: ${GIT_COMMIT:-unknown}
     environment:
       # Provider-neutral. The defaults target a local Ollama because that is what
-      # this template is verified against; point these at any OpenAI-compatible
+      # this application is verified against; point these at any OpenAI-compatible
       # endpoint instead and nothing else changes.
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
       LLM_API_KEY: ${LLM_API_KEY:-ollama}
@@ -229,13 +235,13 @@ services:
       # needs it absent, not set to "none" or to "".
       LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT-none}
       LLM_GUARD_REASONING_EFFORT: ${LLM_GUARD_REASONING_EFFORT-none}
-      TICKETS_MCP_URL: http://mcp-server:8080/mcp
+      ETF_MCP_URL: http://mcp-server:8080/mcp
       MCP_API_KEY: ${MCP_API_KEY:-dev-mcp-api-key-change-me}
-      # Optional human-approval feature; see the MCP service above and
-      # agent/config.yml. Both must be set, and config.yml must declare the
-      # function and expose it, before the model has any way to change state.
-      HITL_APPROVAL_SECRET: ${HITL_APPROVAL_SECRET-}
-      HITL_ENABLE_INTERACTIVE: ${HITL_ENABLE_INTERACTIVE:-false}
+      # Required, and on by default: the three state-changing actions in
+      # agent/config.yml are this application's purpose. Must match the MCP
+      # server's secret exactly. See docs/APPROVALS.md.
+      HITL_APPROVAL_SECRET: ${HITL_APPROVAL_SECRET:-dev-hitl-approval-secret-change-me-32chars}
+      HITL_ENABLE_INTERACTIVE: ${HITL_ENABLE_INTERACTIVE:-true}
       # Fail closed on an interaction whose owner this agent did not record.
       # Safe to enable when the approval feature is the only interaction type in
       # use; leave unset if NAT's OAuth consent flow is also used.
@@ -244,7 +250,7 @@ services:
       OTEL_COLLECTOR_TRACES_ENDPOINT: ${OTEL_COLLECTOR_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: http/protobuf
-      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-tickets-agent}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-etf-research-agent}
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-local}
       NAT_TRACE_CONTENT_MAX_CHARS: ${NAT_TRACE_CONTENT_MAX_CHARS:-65536}
       GUARDRAILS_TRACE_CAPTURE_CONTENT: ${GUARDRAILS_TRACE_CAPTURE_CONTENT:-true}
@@ -255,10 +261,10 @@ services:
       GUARDRAILS_INPUT_BLOCK_MESSAGE: "${GUARDRAILS_INPUT_BLOCK_MESSAGE:-I'm sorry, I can't help with that request.}"
       GUARDRAILS_RAIL_POOL_SIZE: ${GUARDRAILS_RAIL_POOL_SIZE:-4}
       # Ceiling on a streamed answer buffered for PII masking (see
-      # text_guardrails._pii_buffer_limit); only relevant when the "mask
-      # sensitive data on output" flow is enabled in config.yml. Read
-      # directly by the agent process, so it must reach this container's
-      # environment, not just docs/.env.example.
+      # text_guardrails._pii_buffer_limit). INERT in this application: the
+      # "mask sensitive data on output" flow is deliberately not enabled (see
+      # agent/config.yml), so the native streaming path is used and nothing is
+      # buffered. Kept wired through so enabling masking is a one-place change.
       GUARDRAILS_PII_MAX_BUFFER_CHARS: ${GUARDRAILS_PII_MAX_BUFFER_CHARS:-200000}
       NAT_TRACE_CAPTURE_CONTENT: ${NAT_TRACE_CAPTURE_CONTENT:-true}
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-true}
@@ -294,8 +300,8 @@ services:
       OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL:-http://localhost:3000/api/gateway/auth/callback}
       KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8082}
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-tickets}
-      KEYCLOAK_GATEWAY_CLIENT_ID: ${KEYCLOAK_GATEWAY_CLIENT_ID:-tickets-gateway}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-etf-research}
+      KEYCLOAK_GATEWAY_CLIENT_ID: ${KEYCLOAK_GATEWAY_CLIENT_ID:-etf-research-gateway}
       KEYCLOAK_GATEWAY_CLIENT_SECRET: ${KEYCLOAK_GATEWAY_CLIENT_SECRET:-dev-gateway-client-secret-change-me}
       AGENT_WORKFLOW_URL: http://agent:8000/v1/workflow/full
       AGENT_API_KEY: ${AGENT_API_KEY:-dev-agent-api-key-change-me}
@@ -309,10 +315,10 @@ services:
       GATEWAY_MAX_MESSAGES: ${GATEWAY_MAX_MESSAGES:-100}
       GATEWAY_MAX_MESSAGE_CHARS: ${GATEWAY_MAX_MESSAGE_CHARS:-32768}
       GATEWAY_MAX_TOTAL_MESSAGE_CHARS: ${GATEWAY_MAX_TOTAL_MESSAGE_CHARS:-262144}
-      GATEWAY_SESSION_COOKIE: ${GATEWAY_SESSION_COOKIE:-tickets_gateway_session}
-      GATEWAY_CSRF_COOKIE: ${GATEWAY_CSRF_COOKIE:-tickets_gateway_csrf}
-      GATEWAY_LOGIN_COOKIE: ${GATEWAY_LOGIN_COOKIE:-tickets_gateway_login}
-      RUST_LOG: ${GATEWAY_RUST_LOG:-tickets_auth_gateway=info}
+      GATEWAY_SESSION_COOKIE: ${GATEWAY_SESSION_COOKIE:-etf_research_gateway_session}
+      GATEWAY_CSRF_COOKIE: ${GATEWAY_CSRF_COOKIE:-etf_research_gateway_csrf}
+      GATEWAY_LOGIN_COOKIE: ${GATEWAY_LOGIN_COOKIE:-etf_research_gateway_login}
+      RUST_LOG: ${GATEWAY_RUST_LOG:-etf_auth_gateway=info}
     networks:
       - gateway_net
       - auth_net
@@ -336,8 +342,8 @@ services:
     environment:
       GATEWAY_INTERNAL_URL: http://gateway:8081
       UI_PUBLIC_URL: ${UI_PUBLIC_URL:-http://localhost:3000}
-      GATEWAY_CSRF_COOKIE: ${GATEWAY_CSRF_COOKIE:-tickets_gateway_csrf}
-      UI_TOOL_NAMES: ${UI_TOOL_NAMES:-search_tickets,get_ticket}
+      GATEWAY_CSRF_COOKIE: ${GATEWAY_CSRF_COOKIE:-etf_research_gateway_csrf}
+      UI_TOOL_NAMES: ${UI_TOOL_NAMES:-search_etfs,get_etf,evaluate_etf,get_research_summary,get_research_context,get_etf_history,commit_evaluation,shortlist_etf,assign_etf}
     networks:
       - edge
       - gateway_net
@@ -361,6 +367,7 @@ services:
     volumes:
       - ./evaluation:/app/evaluation:ro
       - ./evaluation/results:/app/evaluation/results
+      - ./data:/app/data:ro
       # Read-only, so the harness can register the agent's prompts in MLflow and
       # compare its own digest against the one the running agent reports.
       - ./agent/config.yml:/app/agent-config.yml:ro
@@ -376,7 +383,7 @@ services:
       EVALUATION_HTTP_MAX_ATTEMPTS: ${EVALUATION_HTTP_MAX_ATTEMPTS:-4}
       # The tool names the harness recognises as workflow tool calls. A domain
       # application overrides this instead of editing the harness.
-      EVALUATION_TOOL_NAMES: ${EVALUATION_TOOL_NAMES:-search_tickets,get_ticket}
+      EVALUATION_TOOL_NAMES: ${EVALUATION_TOOL_NAMES:-search_etfs,get_etf,evaluate_etf,get_research_summary,get_research_context,get_etf_history}
       # This container has no .git and no working tree, so the host is the only
       # place that can answer what commit the harness is running. GIT_SOURCE says
       # where that answer came from — a git checkout, or nowhere. GIT_DIRTY is
@@ -390,14 +397,16 @@ services:
       # multi-paragraph warning it would otherwise print before every suite.
       GIT_PYTHON_REFRESH: quiet
       AGENT_CONFIG_PATH: ${AGENT_CONFIG_PATH:-/app/agent-config.yml}
-      GUARDRAILS_EVALUATION_EXPERIMENT: ${GUARDRAILS_EVALUATION_EXPERIMENT:-tickets-agent-guardrails-evaluation}
-      GUARDRAILS_EVALUATION_DATASET: ${GUARDRAILS_EVALUATION_DATASET:-tickets-agent-guardrails-dataset}
-      TOOL_CALLING_EVALUATION_EXPERIMENT: ${TOOL_CALLING_EVALUATION_EXPERIMENT:-tickets-agent-tool-calling-evaluation}
-      TOOL_CALLING_EVALUATION_DATASET: ${TOOL_CALLING_EVALUATION_DATASET:-tickets-agent-tool-calling-dataset}
-      GROUNDING_EVALUATION_EXPERIMENT: ${GROUNDING_EVALUATION_EXPERIMENT:-tickets-agent-grounding-evaluation}
-      GROUNDING_EVALUATION_DATASET: ${GROUNDING_EVALUATION_DATASET:-tickets-agent-grounding-dataset}
-      INJECTION_EVALUATION_EXPERIMENT: ${INJECTION_EVALUATION_EXPERIMENT:-tickets-agent-injection-evaluation}
-      INJECTION_EVALUATION_DATASET: ${INJECTION_EVALUATION_DATASET:-tickets-agent-injection-dataset}
+      EVALUATION_EXPERIMENT: ${EVALUATION_EXPERIMENT:-etf-evaluation-accuracy}
+      EVALUATION_DATASET: ${EVALUATION_DATASET:-etf-evaluation-cases}
+      POLICY_EVALUATION_EXPERIMENT: ${POLICY_EVALUATION_EXPERIMENT:-etf-decision-policy}
+      POLICY_EVALUATION_DATASET: ${POLICY_EVALUATION_DATASET:-etf-decision-policy-cases}
+      GROUNDING_EVALUATION_EXPERIMENT: ${GROUNDING_EVALUATION_EXPERIMENT:-etf-research-grounding}
+      GROUNDING_EVALUATION_DATASET: ${GROUNDING_EVALUATION_DATASET:-etf-research-grounding-cases}
+      INJECTION_EVALUATION_EXPERIMENT: ${INJECTION_EVALUATION_EXPERIMENT:-etf-data-plane-injection}
+      INJECTION_EVALUATION_DATASET: ${INJECTION_EVALUATION_DATASET:-etf-data-plane-injection-cases}
+      GUARDRAILS_EVALUATION_EXPERIMENT: ${GUARDRAILS_EVALUATION_EXPERIMENT:-etf-prompt-robustness}
+      GUARDRAILS_EVALUATION_DATASET: ${GUARDRAILS_EVALUATION_DATASET:-etf-prompt-robustness-cases}
     networks:
       - agent_net
       - telemetry_net
@@ -437,7 +446,7 @@ networks:
 
 volumes:
   # Each default derives from the *effective* project name — set by `-p`, by
-  # `COMPOSE_PROJECT_NAME`, or by the `tickets-agent` default at the top of this
+  # `COMPOSE_PROJECT_NAME`, or by the `etf-research-agent` default at the top of this
   # file, in that order — so two projects on the same Docker host get separate
   # storage automatically, the same way they already get separate containers
   # and networks. An unconditional literal name here would pin every project to
@@ -448,10 +457,10 @@ volumes:
   # stable name (e.g. to keep reusing a volume across a project rename) can set
   # it explicitly; an explicit override always wins over the computed default.
   postgres-data:
-    name: ${POSTGRES_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-tickets-agent}-postgres-data}
+    name: ${POSTGRES_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-etf-research-agent}-postgres-data}
   mlflow-data:
-    name: ${MLFLOW_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-tickets-agent}-mlflow-data}
+    name: ${MLFLOW_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-etf-research-agent}-mlflow-data}
   keycloak-data:
-    name: ${KEYCLOAK_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-tickets-agent}-keycloak-data}
+    name: ${KEYCLOAK_DATA_VOLUME:-${COMPOSE_PROJECT_NAME:-etf-research-agent}-keycloak-data}
   keycloak-import:
-    name: ${KEYCLOAK_IMPORT_VOLUME:-${COMPOSE_PROJECT_NAME:-tickets-agent}-keycloak-import}
+    name: ${KEYCLOAK_IMPORT_VOLUME:-${COMPOSE_PROJECT_NAME:-etf-research-agent}-keycloak-import}

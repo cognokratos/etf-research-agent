@@ -309,11 +309,11 @@ def mlflow_tags(record: dict[str, Any]) -> dict[str, str]:
 def _model_prefix() -> str:
     """Name the deployed agent is grouped under in MLflow.
 
-    Overridable so a domain application built on this template appears under its
-    own name without editing the harness.
+    Overridable rather than hardcoded, so a fork or a second deployment appears
+    under its own name without editing the harness.
     """
 
-    return os.getenv("EVALUATION_MODEL_PREFIX", "agent")
+    return os.getenv("EVALUATION_MODEL_PREFIX", "etf-research-agent")
 
 
 def active_model_name(record: dict[str, Any]) -> str:

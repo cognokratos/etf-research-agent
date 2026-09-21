@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "tickets-mcp": {
+    "etf-mcp": {
       "type": "streamable-http",
       "url": "http://mcp-server:8080/mcp",
       "headers": {

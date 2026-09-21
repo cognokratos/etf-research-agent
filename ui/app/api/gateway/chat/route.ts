@@ -346,7 +346,7 @@ function inferToolName(envelope: NatIntermediateEnvelope, payload: JsonRecord): 
 }
 
 function isKnownToolName(name: string): boolean {
-  const configured = (process.env.UI_TOOL_NAMES ?? "search_tickets,get_ticket")
+  const configured = (process.env.UI_TOOL_NAMES ?? "search_etfs,get_etf,evaluate_etf,get_research_summary,get_research_context,get_etf_history,commit_evaluation,shortlist_etf,assign_etf")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
@@ -398,7 +398,7 @@ export async function POST(request: Request) {
   const workflowUrl = gatewayInternalUrl("/api/chat");
   const cookieHeader = request.headers.get("cookie") ?? "";
   const csrfCookieName =
-    process.env.GATEWAY_CSRF_COOKIE ?? "tickets_gateway_csrf";
+    process.env.GATEWAY_CSRF_COOKIE ?? "etf_research_gateway_csrf";
   const csrfToken = cookieValue(cookieHeader, csrfCookieName);
 
   const stream = createUIMessageStream({

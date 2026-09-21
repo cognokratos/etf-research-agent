@@ -17,6 +17,19 @@ The allow templates are anchored to the complete message (`fullmatch` on
 whitespace-normalised text, length-bounded), so appending an instruction
 override to an otherwise valid query does not inherit the allow.
 
+The templates themselves are this application's vocabulary
+(`_READ_ONLY_LOOKUP_TEMPLATES`): listing the universe, ranking by score, the
+research summary, one fund, its details, its history, and "why is this fund
+marked X". The *mechanism* around them is not domain-specific, and adapting it
+means replacing those patterns and nothing else — subject to two invariants the
+module documents and `agent/verify_input_guardrails.py` asserts:
+
+* every pattern is matched with `fullmatch` against the normalised message;
+* **no pattern names a state-changing action.** An allow rule that admitted
+  "shortlist VWCE-XETRA" would let the override reach a mutation, which is the
+  one thing this layer must never do. It exists to correct an over-eager input
+  rail on requests that *read*.
+
 ### Client-supplied history
 
 The gateway validates that each history message has role `user` or `assistant`;
@@ -39,7 +52,11 @@ turn, where the full rail does screen it.
 
 ## Output rails
 
-Two, and they do different things.
+Two are implemented and they do different things. **This application enables
+only the first.** `mask sensitive data on output` is deliberately left off, and
+the Presidio (`sdd`) extra is not installed — see *Why masking is off here*
+below. The masking path is documented in full because it is one configuration
+change away, not because it is running.
 
 ### `regex check output` — blocks
 
@@ -51,7 +68,8 @@ is seen before it is released.
 
 ### `mask sensitive data on output` — masks the complete answer, buffered
 
-Presidio-backed PII masking. **Measured behaviour in nemoguardrails 0.21**, not
+**Not enabled in this application.** Presidio-backed PII masking.
+**Measured behaviour in nemoguardrails 0.21**, not
 assumed — `agent/verify_output_guardrails.py` asserts all of it:
 
 * `entities` is the only key the masking action reads.
@@ -88,8 +106,40 @@ enabling or disabling one does not change the other's availability, only
 which dispatch path the middleware uses for output evaluation as a whole (see
 `TextGuardrailsMiddleware._pii_masking_enabled`).
 
-`PERSON` and `ORGANIZATION` are deliberately absent from the entity list: names
-are part of the ticket-triage workflow, and masking them would destroy the answer.
+`PERSON` and `ORGANIZATION` would have to stay absent from the entity list:
+they are the issuer and index names in every answer, and masking them would
+destroy it.
+
+### Why masking is off here
+
+This is a domain decision, not an oversight, and it is the one place this
+application deliberately diverges from the template's guardrail posture.
+
+The values a generic NER pass would mask are the answer. An ISIN is
+structurally close enough to an IBAN that `IBAN_CODE` catches it; expense
+ratios, fund sizes and scores are exactly what was asked for. Masking them
+produces a confidently wrong answer rather than a redacted one — and for a
+research decision about someone's money, a plausible wrong number is worse than
+a refusal.
+
+Two consequences, stated plainly:
+
+* Output protection here is deterministic secret-leakage patterns **only**. It
+  is not PII protection. If the ETF snapshot ever carries personal data, that
+  changes and this decision has to be revisited.
+* Because no masking flow is enabled, the middleware keeps NeMo's native
+  streaming path: this deployment streams incrementally, and
+  `GUARDRAILS_PII_MAX_BUFFER_CHARS` is inert.
+
+Turning it on is three coordinated changes, and the compatibility shim already
+handles its own absence (`guardrails_compat.masking_is_available`), so a partial
+change degrades cleanly rather than erroring:
+
+1. `nemoguardrails[sdd,tracing]` in `agent/requirements.txt`;
+2. the `python -m spacy download en_core_web_lg` step in `agent/Dockerfile`;
+3. `mask sensitive data on output` in `output.flows` **and** a
+   `sensitive_data_detection` entity list in `rails.config` — `config.yml` is
+   asserted to carry both or neither.
 
 ## Compatibility with the pinned release
 

@@ -2,7 +2,7 @@
 
 Needs no cluster, no model and no database. The Rust half — signature
 verification, binding, lifetime ceiling, the transition policy — is tested by
-`cargo test -p tickets-mcp-server`; this covers what the agent is responsible for:
+`cargo test -p etf-mcp-server`; this covers what the agent is responsible for:
 
 * the minted token's shape and its signature, verified against an independent
   reimplementation of the check, so the two sides cannot silently diverge;
@@ -34,23 +34,29 @@ if len(os.environ.get("HITL_APPROVAL_SECRET", "")) < 24:
     os.environ["HITL_APPROVAL_SECRET"] = "a-test-secret-of-at-least-24-characters"
 
 from nat_streaming_react.approval import (  # noqa: E402
-    ACTION_SET_TICKET_PRIORITY,
+    ACTION_ASSIGN,
+    ACTION_COMMIT,
+    ACTION_SHORTLIST,
     CANCEL_SENTINEL,
+    DECISIONS,
     MAX_TOKEN_TTL_SECONDS,
+    AssignEtfRequest,
+    CommitEvaluationRequest,
+    ShortlistEtfRequest,
     _note_disclosure,
+    action_payload,
     approval_result,
     approval_secret,
     build_claims,
     canonical_json,
     cancelled,
+    decision_options,
     execute_url,
     mint_token,
     model_supplied_note,
-    needs_rationale,
     payload_hash,
     prompt_text,
-    priority_options,
-    SetTicketPriorityRequest,
+    required_prompts,
 )
 from nat_streaming_react.interaction_guard import (  # noqa: E402
     InteractionAuthorizationError,
@@ -61,9 +67,9 @@ from nat_streaming_react.interaction_guard import (  # noqa: E402
     submitted_choice,
 )
 
-ACTOR = "support-rep-1"
+ACTOR = "researcher-1"
 REQUEST_ID = "11111111-1111-4111-8111-111111111111"
-RESOURCE = "TKT-1001"
+RESOURCE = "VWCE-XETRA"
 
 
 def verify_independently(secret: bytes, token: str) -> dict:
@@ -87,15 +93,19 @@ def verify_independently(secret: bytes, token: str) -> dict:
 
 def claims(**overrides) -> dict:
     base = dict(
-        action=ACTION_SET_TICKET_PRIORITY,
+        action=ACTION_COMMIT,
         resource_id=RESOURCE,
         actor_id=ACTOR,
         request_id=REQUEST_ID,
         ttl_seconds=600,
-        choice="high",
-        expected_choice="medium",
-        rationale="Reviewed with the customer's documentation.",
-        payload={"note": "Supported by the invoice on file."},
+        # A promotion: the engine said `research`, the human chose `shortlist`.
+        choice="shortlist",
+        expected_choice="research",
+        rationale="Accepting the tracking-difference gap deliberately.",
+        payload=action_payload(
+            llm_recommendation="research",
+            research_note="Broad developed-market exposure at 0.12% TER.",
+        ),
     )
     base.update(overrides)
     return build_claims(**base)
@@ -107,12 +117,12 @@ class TokenShapeTests(unittest.TestCase):
         decoded = verify_independently(approval_secret(), token)
 
         self.assertEqual(decoded["v"], 1)
-        self.assertEqual(decoded["action"], ACTION_SET_TICKET_PRIORITY)
+        self.assertEqual(decoded["action"], ACTION_COMMIT)
         self.assertEqual(decoded["resource_id"], RESOURCE)
         self.assertEqual(decoded["actor_id"], ACTOR)
         self.assertEqual(decoded["request_id"], REQUEST_ID)
-        self.assertEqual(decoded["choice"], "high")
-        self.assertEqual(decoded["expected_choice"], "medium")
+        self.assertEqual(decoded["choice"], "shortlist")
+        self.assertEqual(decoded["expected_choice"], "research")
         self.assertTrue(decoded["override_requested"])
         self.assertTrue(decoded["nonce"])
 
@@ -122,7 +132,7 @@ class TokenShapeTests(unittest.TestCase):
         tampered_payload = json.loads(
             base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4))
         )
-        tampered_payload["resource_id"] = "TKT-1002"
+        tampered_payload["resource_id"] = "IWDA-AMS"
         forged = (
             base64.urlsafe_b64encode(canonical_json(tampered_payload).encode())
             .decode()
@@ -159,8 +169,12 @@ class TokenShapeTests(unittest.TestCase):
             os.environ["HITL_APPROVAL_SECRET"] = previous
 
     def test_override_requested_is_derived_not_asserted(self):
-        self.assertTrue(claims(choice="high", expected_choice="medium")["override_requested"])
-        self.assertFalse(claims(choice="medium", expected_choice="medium")["override_requested"])
+        self.assertTrue(
+            claims(choice="shortlist", expected_choice="research")["override_requested"]
+        )
+        self.assertFalse(
+            claims(choice="research", expected_choice="research")["override_requested"]
+        )
 
 
 class CanonicalEncodingTests(unittest.TestCase):
@@ -168,12 +182,14 @@ class CanonicalEncodingTests(unittest.TestCase):
 
     def test_key_order_does_not_change_the_digest(self):
         self.assertEqual(
-            payload_hash({"note": "n", "assignee": "a"}),
-            payload_hash({"assignee": "a", "note": "n"}),
+            payload_hash({"research_note": "n", "assignee": "a"}),
+            payload_hash({"assignee": "a", "research_note": "n"}),
         )
 
     def test_content_does_change_the_digest(self):
-        self.assertNotEqual(payload_hash({"note": "a"}), payload_hash({"note": "b"}))
+        self.assertNotEqual(
+            payload_hash({"research_note": "a"}), payload_hash({"research_note": "b"})
+        )
 
     def test_the_digest_matches_the_payload_the_token_carries(self):
         built = claims()
@@ -184,124 +200,230 @@ class CanonicalEncodingTests(unittest.TestCase):
         # Pinned against the Rust side's canonical_json, which produces the same
         # bytes for the same value.
         self.assertEqual(
-            payload_hash({"note": "x"}),
-            hashlib.sha256(b'{"note":"x"}').hexdigest(),
+            payload_hash({"research_note": "x"}),
+            hashlib.sha256(b'{"research_note":"x"}').hexdigest(),
         )
 
 
 class PromptRuleTests(unittest.TestCase):
-    def test_a_change_requires_a_reason_and_keeping_the_priority_does_not(self):
-        self.assertTrue(needs_rationale("high", "medium"))
-        self.assertTrue(needs_rationale("medium", "high"))
-        self.assertFalse(needs_rationale("medium", "medium"))
+    """Which prompts a human is asked for, and when. Pure, so no model runs."""
 
-    def test_every_allowed_priority_is_offered_plus_cancel(self):
-        options = priority_options("medium", ("medium", "high"))
+    def test_a_different_decision_requires_a_rationale_and_confirming_does_not(self):
+        needs_rationale, _ = required_prompts(
+            "shortlist", rules_decision="research", note_available=True
+        )
+        self.assertTrue(needs_rationale)
+        needs_rationale, _ = required_prompts(
+            "reject", rules_decision="research", note_available=True
+        )
+        self.assertTrue(needs_rationale, "a demotion is an override too")
+        needs_rationale, _ = required_prompts(
+            "research", rules_decision="research", note_available=True
+        )
+        self.assertFalse(needs_rationale)
+
+    def test_a_human_promotion_can_be_completed_without_the_model(self):
+        """The property `verify_hitl_override.py` drives end to end.
+
+        The MCP refuses a shortlist with no grounded note, and a model proposing
+        `research` has no reason to have drafted one. If the note were only ever
+        the model's, a person could reach shortlist exactly where the model had
+        already been -- permission rather than initiative. So choosing
+        `shortlist` with no drafted note must ask the human for one.
+        """
+
+        needs_rationale, needs_note = required_prompts(
+            "shortlist", rules_decision="research", note_available=False
+        )
+        self.assertTrue(needs_rationale)
+        self.assertTrue(needs_note, "a human-initiated promotion must be completable")
+
+        # With a drafted note already on screen, confirming stays one interaction.
+        needs_rationale, needs_note = required_prompts(
+            "shortlist", rules_decision="research", note_available=True
+        )
+        self.assertTrue(needs_rationale)
+        self.assertFalse(needs_note)
+
+        # A note is only ever required *for* a shortlist.
+        for decision in ("reject", "research"):
+            with self.subTest(decision=decision):
+                _, needs_note = required_prompts(
+                    decision, rules_decision="research", note_available=False
+                )
+                self.assertFalse(needs_note)
+
+    def test_every_decision_is_offered_plus_cancel(self):
+        """All three, regardless of what the model proposed or what a hard
+        constraint forbids. The MCP is the authority on constraints and
+        re-checks them after approval; filtering here would duplicate policy
+        into the prompt and could imply the constraint lives there."""
+
+        options = decision_options("research", note_available=True)
         ids = [option.id for option in options]
-        self.assertEqual(ids, ["medium", "high", "cancel"])
+        self.assertEqual(ids, [*DECISIONS, "cancel"])
         values = {option.id: option.value for option in options}
         self.assertEqual(values["cancel"], CANCEL_SENTINEL)
-        keep = next(option for option in options if option.id == "medium")
-        self.assertIn("Keep", keep.label)
-        change = next(option for option in options if option.id == "high")
-        self.assertIn("Change", change.label)
-        self.assertIn("reason", change.description)
+        for decision in DECISIONS:
+            self.assertEqual(values[decision], decision)
 
-    def test_the_prompt_states_the_current_priority_and_the_proposal(self):
-        request = SetTicketPriorityRequest(
-            ticket_id=RESOURCE,
-            current_priority="medium",
-            requested_priority="high",
-            summary="The customer has followed up twice with no resolution.",
-        )
-        note = model_supplied_note(request)
-        text = prompt_text(request, note)
+        confirm = next(option for option in options if option.id == "research")
+        self.assertIn("Confirm", confirm.label)
+        self.assertIn("no override", confirm.description)
+        promote = next(option for option in options if option.id == "shortlist")
+        self.assertIn("Override", promote.label)
+        self.assertIn("rationale", promote.description)
+
+    def test_a_shortlist_with_no_drafted_note_says_so_on_the_option(self):
+        options = decision_options("research", note_available=False)
+        promote = next(option for option in options if option.id == "shortlist")
+        self.assertIn("research note", promote.description)
+        self.assertIn("asked for one", promote.description)
+
+    def test_the_prompt_separates_the_engine_the_model_and_the_human(self):
+        """A person authorizing an investment decision has to see who said what.
+
+        Collapsing the engine and the model into one "system decision" is how
+        the model's opinion ends up ratified as policy.
+        """
+
+        lines = [
+            f"ETF: {RESOURCE}",
+            "Action: commit review decision",
+            "Deterministic engine (authoritative): research",
+            "Model recommendation (advisory only): research",
+            "Default decision: research",
+        ]
+        text = prompt_text(lines, "Broad global equity exposure.", choosing=True)
         self.assertIn(RESOURCE, text)
-        self.assertIn("'medium'", text)
-        self.assertIn("'high'", text)
-        self.assertIn("requires a reason", text)
-        # No note was supplied: no disclosure line, and an empty note still works.
-        self.assertEqual(note, "")
-        self.assertNotIn("Model-supplied note", text)
+        self.assertIn("Deterministic engine (authoritative): research", text)
+        self.assertIn("Model recommendation (advisory only)", text)
+        self.assertIn("Default decision: research", text)
+        self.assertIn("requires a rationale", text)
+        self.assertIn("Nothing is bought, sold or held", text)
 
-    def test_a_model_supplied_note_is_disclosed_before_approval(self):
-        request = SetTicketPriorityRequest(
-            ticket_id=RESOURCE,
-            current_priority="medium",
-            requested_priority="high",
-            summary="s",
-            note="  Documented via invoice #42, café receipt attached ☕  ",
-        )
-        note = model_supplied_note(request)
-        self.assertEqual(note, "Documented via invoice #42, café receipt attached ☕")
+    def test_a_confirmation_prompt_does_not_offer_a_choice(self):
+        text = prompt_text([f"ETF: {RESOURCE}"], "s", choosing=False)
+        self.assertIn("Confirm this state-changing action", text)
+        self.assertNotIn("choose a different one", text)
 
-        choice_prompt = prompt_text(request, note)
-        self.assertIn("Model-supplied note", choice_prompt)
-        self.assertIn(note, choice_prompt)
+    def test_a_model_drafted_note_is_disclosed_before_approval(self):
+        raw = "  Broad exposure; café-listed share class ☕  "
+        note = model_supplied_note(raw)
+        self.assertEqual(note, "Broad exposure; café-listed share class ☕")
 
-        rationale_prompt = "\n".join([
-            f"Ticket {RESOURCE}: s",
-            "irrelevant filler line",
-            _note_disclosure(note),
-        ])
-        self.assertIn(note, rationale_prompt)
-        self.assertIn("signed and recorded verbatim", _note_disclosure(note))
+        disclosure = _note_disclosure(note)
+        self.assertIn(note, disclosure)
+        self.assertIn("not verified by a human", disclosure)
+        self.assertIn("signed and recorded verbatim", disclosure)
+
+        shown = prompt_text([f"ETF: {RESOURCE}", disclosure], "s", choosing=True)
+        self.assertIn("Model-drafted research note", shown)
+        self.assertIn(note, shown)
 
     def test_displayed_note_exactly_equals_the_persisted_note(self):
         """The same normalized value must be shown, signed and persisted.
 
-        A hidden or substituted payload note — one that differs from what was
-        displayed — would mean the human approved something other than what
+        A hidden or substituted payload note -- one that differs from what was
+        displayed -- would mean the human approved something other than what
         actually gets signed. Covers plain text, Unicode, embedded whitespace
         and the empty-note case together so none of them can drift apart.
         """
 
         for raw in (" plain note ", "unicode: café ☕", "line1\nline2\t indented", "", None):
             with self.subTest(raw=raw):
-                request = SetTicketPriorityRequest(
-                    ticket_id=RESOURCE,
-                    current_priority="medium",
-                    requested_priority="high",
-                    summary="s",
-                    note=raw,
+                note = model_supplied_note(raw)
+                persisted = action_payload(research_note=note)
+                shown = prompt_text(
+                    [f"ETF: {RESOURCE}", *([_note_disclosure(note)] if note else [])],
+                    "s",
+                    choosing=True,
                 )
-                note = model_supplied_note(request)
-                displayed = prompt_text(request, note)
-                persisted_payload = {"note": note} if note else {}
-
                 if note:
-                    self.assertIn(note, displayed)
-                    self.assertEqual(persisted_payload["note"], note)
-                    signed_claims = claims(payload=persisted_payload, choice="high")
-                    self.assertEqual(signed_claims["payload"]["note"], note)
-                    self.assertEqual(payload_hash(persisted_payload), payload_hash({"note": note}))
+                    self.assertIn(note, shown)
+                    self.assertEqual(persisted["research_note"], note)
+                    signed = claims(payload=persisted)
+                    self.assertEqual(signed["payload"]["research_note"], note)
+                    self.assertEqual(
+                        payload_hash(persisted), payload_hash({"research_note": note})
+                    )
                 else:
-                    self.assertNotIn("Model-supplied note", displayed)
-                    self.assertEqual(persisted_payload, {})
+                    self.assertNotIn("Model-drafted research note", shown)
+                    self.assertEqual(persisted, {})
 
-    def test_the_request_schema_rejects_an_unknown_status(self):
-        for field in ("current_priority", "requested_priority"):
+    def test_blank_payload_fields_are_omitted_rather_than_signed_empty(self):
+        """`payload_str` on the Rust side treats blank as absent, so the minter
+        must not ship a key the verifier will then ignore."""
+
+        self.assertEqual(action_payload(research_note="   ", assignee=""), {})
+        self.assertEqual(
+            action_payload(llm_recommendation="research", research_note="  x  "),
+            {"llm_recommendation": "research", "research_note": "x"},
+        )
+
+    def test_the_request_schema_rejects_a_decision_outside_the_vocabulary(self):
+        for field in ("rules_decision", "requested_decision", "llm_recommendation"):
             payload = {
-                "ticket_id": RESOURCE,
-                "current_priority": "medium",
-                "requested_priority": "high",
+                "etf_id": RESOURCE,
+                "rules_decision": "research",
+                "requested_decision": "research",
                 "summary": "s",
             }
-            payload[field] = "deleted"
+            payload[field] = "buy"
             with self.subTest(field=field), self.assertRaises(Exception):
-                SetTicketPriorityRequest(**payload)
+                CommitEvaluationRequest(**payload)
 
     def test_the_request_schema_rejects_an_empty_identifier_or_summary(self):
-        for field, value in (("ticket_id", ""), ("summary", "")):
+        for field in ("etf_id", "summary"):
             payload = {
-                "ticket_id": RESOURCE,
-                "current_priority": "medium",
-                "requested_priority": "high",
+                "etf_id": RESOURCE,
+                "rules_decision": "research",
+                "requested_decision": "research",
                 "summary": "s",
             }
-            payload[field] = value
+            payload[field] = ""
             with self.subTest(field=field), self.assertRaises(Exception):
-                SetTicketPriorityRequest(**payload)
+                CommitEvaluationRequest(**payload)
+
+    def test_a_shortlist_request_requires_a_grounded_note(self):
+        with self.assertRaises(Exception):
+            ShortlistEtfRequest(
+                etf_id=RESOURCE, rules_decision="research", research_note="", summary="s"
+            )
+        request = ShortlistEtfRequest(
+            etf_id=RESOURCE,
+            rules_decision="research",
+            research_note="Grounded in the evaluation components.",
+            summary="s",
+        )
+        self.assertEqual(request.etf_id, RESOURCE)
+
+    def test_an_assignment_requires_an_owner_and_carries_no_decision(self):
+        with self.assertRaises(Exception):
+            AssignEtfRequest(etf_id=RESOURCE, assignee="", summary="s")
+        built = claims(
+            action=ACTION_ASSIGN,
+            choice=None,
+            expected_choice=None,
+            rationale=None,
+            payload=action_payload(assignee="researcher-2"),
+        )
+        self.assertIsNone(built["choice"])
+        self.assertIsNone(built["expected_choice"])
+        self.assertFalse(built["override_requested"])
+        self.assertEqual(built["payload"], {"assignee": "researcher-2"})
+
+    def test_a_shortlist_action_is_minted_against_the_engines_decision(self):
+        built = claims(action=ACTION_SHORTLIST, choice="shortlist", expected_choice="research")
+        self.assertEqual(built["action"], ACTION_SHORTLIST)
+        self.assertTrue(
+            built["override_requested"],
+            "shortlisting above the engine's decision is a promotion",
+        )
+        confirmed = claims(
+            action=ACTION_SHORTLIST, choice="shortlist", expected_choice="shortlist"
+        )
+        self.assertFalse(confirmed["override_requested"])
 
 
 class ModelFacingResultTests(unittest.TestCase):
@@ -311,10 +433,10 @@ class ModelFacingResultTests(unittest.TestCase):
         result = json.loads(
             approval_result(
                 resource_id=RESOURCE,
-                action=ACTION_SET_TICKET_PRIORITY,
+                action=ACTION_COMMIT,
                 request_id=REQUEST_ID,
                 committed=False,
-                result={"refused": "the ticket is already high priority"},
+                result={"refused": "Hard constraint HC-UCITS: the fund is not UCITS"},
             )
         )
         self.assertFalse(result["committed"])
@@ -325,36 +447,36 @@ class ModelFacingResultTests(unittest.TestCase):
         result = json.loads(
             approval_result(
                 resource_id=RESOURCE,
-                action=ACTION_SET_TICKET_PRIORITY,
+                action=ACTION_COMMIT,
                 request_id=REQUEST_ID,
                 committed=True,
-                result={"new_priority": "high"},
+                result={"new_state": "SHORTLISTED", "final_decision": "shortlist"},
             )
         )
         self.assertTrue(result["committed"])
         self.assertIn("already applied", result["next_step"])
 
     def test_a_cancellation_is_reported_as_unapproved(self):
-        result = json.loads(cancelled(RESOURCE, ACTION_SET_TICKET_PRIORITY, "The user cancelled."))
+        result = json.loads(cancelled(RESOURCE, ACTION_COMMIT, "The human cancelled."))
         self.assertFalse(result["approved"])
         self.assertNotIn("approval_token", result)
 
 
 class ExecutionEndpointTests(unittest.TestCase):
     def test_the_execution_url_is_derived_from_the_mcp_url(self):
-        previous = os.environ.get("TICKETS_MCP_URL")
+        previous = os.environ.get("ETF_MCP_URL")
         try:
-            os.environ["TICKETS_MCP_URL"] = "http://mcp-server:8080/mcp"
+            os.environ["ETF_MCP_URL"] = "http://mcp-server:8080/mcp"
             self.assertEqual(execute_url(), "http://mcp-server:8080/approvals/execute")
-            os.environ["TICKETS_MCP_URL"] = "http://mcp-server:8080/mcp/"
+            os.environ["ETF_MCP_URL"] = "http://mcp-server:8080/mcp/"
             self.assertEqual(execute_url(), "http://mcp-server:8080/approvals/execute")
-            os.environ.pop("TICKETS_MCP_URL")
+            os.environ.pop("ETF_MCP_URL")
             self.assertIsNone(execute_url())
         finally:
             if previous is None:
-                os.environ.pop("TICKETS_MCP_URL", None)
+                os.environ.pop("ETF_MCP_URL", None)
             else:
-                os.environ["TICKETS_MCP_URL"] = previous
+                os.environ["ETF_MCP_URL"] = previous
 
 
 class _Option:
@@ -391,8 +513,8 @@ class InteractionAuthorizationTests(unittest.TestCase):
     #: field independently against the whole offered set (rather than the
     #: matching pair) is caught by a mismatched cross-reference.
     OPTIONS = [
-        _Option("medium", "MEDIUM"),
-        _Option("high", "HIGH"),
+        _Option("research", "RESEARCH"),
+        _Option("shortlist", "SHORTLIST"),
         _Option("cancel", CANCEL_SENTINEL),
     ]
 
@@ -414,8 +536,8 @@ class InteractionAuthorizationTests(unittest.TestCase):
         self.store.authorize(self.EXECUTION, self.INTERACTION, response)
 
     def test_the_owner_may_answer_with_an_offered_choice(self):
-        self._authorize(_Response(_Option("medium", "MEDIUM")))
-        self._authorize(_Response(_Option("high", "HIGH")))
+        self._authorize(_Response(_Option("research", "RESEARCH")))
+        self._authorize(_Response(_Option("shortlist", "SHORTLIST")))
 
     def test_cancellation_is_always_acceptable(self):
         self._authorize(_Response(_Option("cancel", CANCEL_SENTINEL)))
@@ -427,15 +549,15 @@ class InteractionAuthorizationTests(unittest.TestCase):
         self._authorize(_Response(_Option(None, CANCEL_SENTINEL)))
 
     def test_another_authenticated_user_may_not_answer(self):
-        _responder.set("support-rep-2")
+        _responder.set("researcher-2")
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("high", "HIGH")))
+            self._authorize(_Response(_Option("shortlist", "SHORTLIST")))
         self.assertIn("not addressed to the authenticated user", str(raised.exception))
 
     def test_an_unauthenticated_response_is_refused(self):
         _responder.set(None)
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("high", "HIGH")))
+            self._authorize(_Response(_Option("shortlist", "SHORTLIST")))
         self.assertIn("authenticated identity", str(raised.exception))
 
     def test_a_choice_the_prompt_never_offered_is_refused(self):
@@ -443,7 +565,7 @@ class InteractionAuthorizationTests(unittest.TestCase):
             ("deleted", "DELETED"),
             ("escalated", "ESCALATED"),
             ("", ""),
-            ("medium", "medium"),  # right id, wrong (lowercased) value
+            ("research", "research"),  # right id, wrong (lowercased) value
         ):
             with self.subTest(identifier=identifier, value=value):
                 with self.assertRaises(InteractionAuthorizationError) as raised:
@@ -454,21 +576,21 @@ class InteractionAuthorizationTests(unittest.TestCase):
         """A valid id does not license an arbitrary value on that option."""
 
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("medium", "unoffered-value")))
+            self._authorize(_Response(_Option("research", "unoffered-value")))
         self.assertIn("not offered", str(raised.exception))
 
     def test_offered_value_with_unoffered_id_is_refused(self):
         """A valid value does not license an arbitrary id on that option."""
 
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("unoffered-id", "MEDIUM")))
+            self._authorize(_Response(_Option("unoffered-id", "RESEARCH")))
         self.assertIn("not offered", str(raised.exception))
 
     def test_two_individually_offered_but_mismatched_fields_are_refused(self):
         """id from one option plus value from another must not authorize."""
 
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("high", "MEDIUM")))
+            self._authorize(_Response(_Option("shortlist", "RESEARCH")))
         self.assertIn("not offered", str(raised.exception))
 
     def test_cancel_id_with_a_real_action_value_is_refused(self):
@@ -477,7 +599,7 @@ class InteractionAuthorizationTests(unittest.TestCase):
         is self-consistently a cancellation."""
 
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option(CANCEL_SENTINEL, "MEDIUM")))
+            self._authorize(_Response(_Option(CANCEL_SENTINEL, "RESEARCH")))
         self.assertIn("not offered", str(raised.exception))
 
     def test_cancel_value_with_an_unoffered_real_id_is_refused(self):
@@ -490,7 +612,7 @@ class InteractionAuthorizationTests(unittest.TestCase):
         if its selected_option happens to collide with an offered pair."""
 
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("medium", "MEDIUM"), response_type="dropdown"))
+            self._authorize(_Response(_Option("research", "RESEARCH"), response_type="dropdown"))
         self.assertIn("does not match the pending prompt type", str(raised.exception))
 
     def test_a_choice_bearing_prompt_requires_a_selection(self):
@@ -508,7 +630,7 @@ class InteractionAuthorizationTests(unittest.TestCase):
             self.EXECUTION, self.INTERACTION, None, prompt_type="text"
         )
         with self.assertRaises(InteractionAuthorizationError) as raised:
-            self._authorize(_Response(_Option("medium", "MEDIUM"), response_type="radio"))
+            self._authorize(_Response(_Option("research", "RESEARCH"), response_type="radio"))
         self.assertIn("does not match the pending prompt type", str(raised.exception))
 
     def test_binary_options_are_validated_not_skipped(self):
@@ -531,9 +653,9 @@ class InteractionAuthorizationTests(unittest.TestCase):
         """A rejected submission must leave the legitimate offer still usable."""
 
         with self.assertRaises(InteractionAuthorizationError):
-            self._authorize(_Response(_Option("medium", "unoffered-value")))
+            self._authorize(_Response(_Option("research", "unoffered-value")))
         # The offer is still there, and a legitimate choice still succeeds.
-        self._authorize(_Response(_Option("medium", "MEDIUM")))
+        self._authorize(_Response(_Option("research", "RESEARCH")))
 
     def test_an_unowned_interaction_is_allowed_unless_strict(self):
         lenient = OwnerAwareExecutionStore(strict=False)
@@ -547,11 +669,11 @@ class InteractionAuthorizationTests(unittest.TestCase):
     def test_prompt_offer_pairs_id_and_value_from_the_same_option(self):
         offer = prompt_offer(_Prompt(self.OPTIONS))
         self.assertIsNotNone(offer.choices)
-        self.assertIn(OfferedChoice(id="medium", value="MEDIUM"), offer.choices)
+        self.assertIn(OfferedChoice(id="research", value="RESEARCH"), offer.choices)
         self.assertIn(OfferedChoice(id="cancel", value=CANCEL_SENTINEL), offer.choices)
         # The flattened-union bug this replaces would also accept this cross
         # pairing; the structured offer must not contain it.
-        self.assertNotIn(OfferedChoice(id="medium", value="HIGH"), offer.choices)
+        self.assertNotIn(OfferedChoice(id="research", value="SHORTLIST"), offer.choices)
 
         binary_offer = prompt_offer(_Prompt([_Option("confirm", True), _Option("deny", False)]))
         self.assertIsNotNone(binary_offer.choices)
@@ -562,7 +684,7 @@ class InteractionAuthorizationTests(unittest.TestCase):
         self.assertEqual(text_offer.prompt_type, "text")
 
     def test_submitted_choice_reads_id_and_value_as_one_pair(self):
-        self.assertEqual(submitted_choice(_Response(_Option("medium", "MEDIUM"))), OfferedChoice("medium", "MEDIUM"))
+        self.assertEqual(submitted_choice(_Response(_Option("research", "RESEARCH"))), OfferedChoice("research", "RESEARCH"))
         self.assertIsNone(submitted_choice(_Response(None)))
 
 
@@ -581,12 +703,12 @@ class RealExecutionStoreRoundTripTests(unittest.IsolatedAsyncioTestCase):
         record = await store.create_execution()
         store.record_owner_for_test(record.execution_id, ACTOR)
 
-        prompt = _Prompt([_Option("medium", "MEDIUM"), _Option("high", "HIGH")])
+        prompt = _Prompt([_Option("research", "RESEARCH"), _Option("shortlist", "SHORTLIST")])
         pending = await store.set_interaction_required(record.execution_id, prompt)
 
         token = _responder.set(ACTOR)
         try:
-            response = _Response(_Option("high", "HIGH"))
+            response = _Response(_Option("shortlist", "SHORTLIST"))
             await store.resolve_interaction(record.execution_id, pending.interaction_id, response)
         finally:
             _responder.reset(token)
@@ -599,18 +721,18 @@ class RealExecutionStoreRoundTripTests(unittest.IsolatedAsyncioTestCase):
         record = await store.create_execution()
         store.record_owner_for_test(record.execution_id, ACTOR)
 
-        prompt = _Prompt([_Option("medium", "MEDIUM"), _Option("high", "HIGH")])
+        prompt = _Prompt([_Option("research", "RESEARCH"), _Option("shortlist", "SHORTLIST")])
         pending = await store.set_interaction_required(record.execution_id, prompt)
 
         token = _responder.set(ACTOR)
         try:
-            bad_response = _Response(_Option("medium", "unoffered-value"))
+            bad_response = _Response(_Option("research", "unoffered-value"))
             with self.assertRaises(InteractionAuthorizationError):
                 await store.resolve_interaction(record.execution_id, pending.interaction_id, bad_response)
             self.assertFalse(pending.future.done())
 
             # The legitimate interaction is still usable after the rejection.
-            good_response = _Response(_Option("medium", "MEDIUM"))
+            good_response = _Response(_Option("research", "RESEARCH"))
             await store.resolve_interaction(record.execution_id, pending.interaction_id, good_response)
         finally:
             _responder.reset(token)
@@ -623,14 +745,14 @@ class RealExecutionStoreRoundTripTests(unittest.IsolatedAsyncioTestCase):
         record = await store.create_execution()
         store.record_owner_for_test(record.execution_id, ACTOR)
 
-        prompt = _Prompt([_Option("medium", "MEDIUM"), _Option("high", "HIGH")])
+        prompt = _Prompt([_Option("research", "RESEARCH"), _Option("shortlist", "SHORTLIST")])
         pending = await store.set_interaction_required(record.execution_id, prompt)
 
-        token = _responder.set("support-rep-2")
+        token = _responder.set("researcher-2")
         try:
             with self.assertRaises(InteractionAuthorizationError):
                 await store.resolve_interaction(
-                    record.execution_id, pending.interaction_id, _Response(_Option("medium", "MEDIUM"))
+                    record.execution_id, pending.interaction_id, _Response(_Option("research", "RESEARCH"))
                 )
         finally:
             _responder.reset(token)

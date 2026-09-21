@@ -136,10 +136,61 @@ def main() -> None:
         "config.yml does not select the authenticated NAT front-end worker",
     )
 
-    mcp = text("mcp-server/src/main.rs")
-    require("MCP_API_KEY" in mcp, "MCP API-key environment variable missing")
-    require("constant_time_eq" in mcp, "MCP key comparison is not constant time")
-    require("request.headers_mut().remove(header::AUTHORIZATION)" in mcp, "MCP does not strip the service key")
+    # The MCP server reads its configuration in `main.rs` and serves its HTTP
+    # surface from `http.rs`, so the credential checks live in the latter. The
+    # split is this application's module layout, not the template's single-file
+    # one; the controls are identical.
+    mcp_main = text("mcp-server/src/main.rs")
+    require("MCP_API_KEY" in mcp_main, "MCP API-key environment variable missing")
+    require(
+        "HITL_APPROVAL_SECRET" in mcp_main,
+        "the MCP server no longer requires the approval secret at startup",
+    )
+
+    mcp_http = text("mcp-server/src/http.rs")
+    require("constant_time_eq" in mcp_http, "MCP key comparison is not constant time")
+    require(
+        "request.headers_mut().remove(header::AUTHORIZATION)" in mcp_http,
+        "MCP does not strip the service key",
+    )
+    require(
+        "/approvals/execute" in mcp_http,
+        "the approval execution endpoint is not routed",
+    )
+    require(
+        "require_api_key" in mcp_http,
+        "the MCP HTTP surface is not gated on the service credential",
+    )
+
+    # The approval verifier is the only authority for a mutation, and the action
+    # registry is what keeps that authority closed.
+    mcp_approval = text("mcp-server/src/approval.rs")
+    require("pub const ACTIONS:" in mcp_approval, "the approval action registry is missing")
+    require(
+        "allowed_choices.contains(&choice)" in mcp_approval,
+        "a choice outside the action's vocabulary is no longer refused",
+    )
+    require(
+        "claims.payload_sha256 != payload_hash(&claims.payload)" in mcp_approval,
+        "the approval payload digest is no longer checked against the payload",
+    )
+
+    # The interaction guard is what closes NAT's two-UUIDs-is-authorization gap.
+    # Neither the gateway nor the MCP can make these checks: only the thing that
+    # built the prompt knows what it offered.
+    guard = text("agent/src/nat_streaming_react/interaction_guard.py")
+    require(
+        "class OwnerAwareExecutionStore" in guard,
+        "the owner-aware execution store is missing",
+    )
+    require(
+        "submitted not in offer.choices" in guard,
+        "the submitted choice is no longer checked against what the prompt offered",
+    )
+    require(
+        "class ResponderIdentityMiddleware" in guard,
+        "the responder's authenticated identity is no longer recorded",
+    )
 
     agent_config = text("agent/config.yml")
     require("custom_headers:" in agent_config, "NAT MCP custom headers are missing")

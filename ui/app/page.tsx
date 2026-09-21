@@ -135,7 +135,7 @@ function HumanApprovalCard({ argsText }: { argsText: string }) {
     <section className="approval-card">
       <div className="approval-kicker">Human approval required</div>
       <pre className="approval-summary">
-        {prompt.text ?? "Review the proposed change."}
+        {prompt.text ?? "Review the proposed research decision."}
       </pre>
 
       {isChoice ? (
@@ -195,12 +195,12 @@ function HumanApprovalCard({ argsText }: { argsText: string }) {
         </div>
       ) : isText ? (
         <div className="approval-form">
-          <label htmlFor={`rationale-${args.interactionId}`}>Reason</label>
+          <label htmlFor={`rationale-${args.interactionId}`}>Override rationale</label>
           <textarea
             id={`rationale-${args.interactionId}`}
             value={rationale}
             onChange={(event) => setRationale(event.target.value)}
-            placeholder={prompt.placeholder ?? "Enter an audit-ready reason"}
+            placeholder={prompt.placeholder ?? "Enter an audit-ready rationale"}
             disabled={disabled}
             rows={3}
           />
@@ -219,7 +219,7 @@ function HumanApprovalCard({ argsText }: { argsText: string }) {
               disabled={disabled || rationale.trim().length === 0}
               onClick={() => submit({ type: "text", text: rationale.trim() })}
             >
-              Submit reason
+              Approve override
             </button>
           </div>
         </div>
@@ -249,7 +249,7 @@ function HumanApprovalCard({ argsText }: { argsText: string }) {
               })
             }
           >
-            Confirm
+            Confirm action
           </button>
         </div>
       )}
@@ -321,13 +321,14 @@ function UserMessage() {
 /** Render the Markdown the model emits.
  *
  * `react-markdown` does **not** render raw HTML unless `rehype-raw` is added,
- * and it deliberately is not added here. Assistant text quotes tool results,
- * which are untrusted data from outside this system, so a renderer that
- * executed embedded HTML would turn a display concern into an injection vector.
- * Markdown formatting is rendered; HTML is escaped and shown as text.
+ * and it deliberately is not added here. Assistant text quotes issuer
+ * descriptions and stored research notes, which are untrusted free text from
+ * outside this system, so a renderer that executed embedded HTML would turn a
+ * display concern into an injection vector. Markdown formatting is rendered;
+ * HTML is escaped and shown as text.
  *
  * GFM is enabled for tables and strikethrough, which the model uses when it
- * compares records side by side. */
+ * compares funds side by side. */
 function AssistantText({ text }: { text: string }) {
   return (
     <div className="assistant-text">
@@ -363,17 +364,31 @@ function Chat() {
       <ThreadPrimitive.Viewport className="thread-viewport">
         <AuiIf condition={(state) => state.thread.isEmpty}>
           <div className="welcome">
-            <h1>Support Ticket Assistant</h1>
-            <p>Keycloak → Rust gateway → NAT ReAct → Rust MCP → Postgres</p>
+            <h1>ETF Research Agent</h1>
+            <p>
+              Keycloak → Rust gateway → NeMo Agent Toolkit HITL → deterministic
+              Rust evaluation engine → Postgres
+            </p>
             <p className="scenario-subtitle">
-              Customer support tickets for a fictional online shop.
+              Deterministic ETF evaluation with human-approved decisions.
             </p>
             <p className="scenario-hint">Try asking:</p>
             <div className="scenario-list">
-              <code>Show me the open support tickets</code>
-              <code>Which ticket should we handle first, and why?</code>
-              <code>Summarize ticket TKT-1003 and its history</code>
+              <code>Show me the highest-rated ETF candidates</code>
+              <code>Compare VWCE and IWDA against my investor profile</code>
+              <code>Evaluate VWCE-XETRA and explain every score component</code>
+              <code>Why is AGGH-XETRA marked research instead of shortlist?</code>
+              <code>Which ETFs were rejected because of hard constraints?</code>
+              <code>Which ETFs still need research?</code>
+              <code>Show the decision history for VWCE-XETRA</code>
+              <code>Which shortlisted ETFs are currently unassigned?</code>
             </div>
+            <p className="disclaimer">
+              Scores measure deterministic quality and fit against a configured
+              investor profile for a dated data snapshot. They are not financial
+              advice, return forecasts or trade recommendations, and this system
+              cannot buy, sell or hold anything.
+            </p>
           </div>
         </AuiIf>
 
@@ -387,7 +402,7 @@ function Chat() {
           <ComposerPrimitive.Root className="composer">
             <ComposerPrimitive.Input
               className="composer-input"
-              placeholder="Ask about support tickets…"
+              placeholder="Ask about an ETF, or compare two of them…"
               rows={1}
             />
             <ComposerPrimitive.Send className="send-button">
@@ -444,9 +459,10 @@ function LoginScreen({ message }: { message?: string }) {
         <div className="login-logo" aria-hidden="true">
           AI
         </div>
-        <h1>Support Ticket Assistant</h1>
+        <h1>ETF Research Agent</h1>
         <p>
-          Sign in through Keycloak before accessing support ticket data.
+          Sign in through Keycloak before reviewing ETF candidates and recording
+          research decisions.
         </p>
         {message && <p className="login-error">{message}</p>}
         <a className="login-button" href="/api/gateway/auth/login">

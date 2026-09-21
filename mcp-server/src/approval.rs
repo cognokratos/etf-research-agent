@@ -7,17 +7,30 @@
 //!
 //! Verification is a pure function of a token and the facts the caller
 //! recomputed, with no database or server state, so the whole matrix of
-//! rejections is unit-testable. State-dependent checks — nonce consumption,
-//! the resource's current state, the audit insert — live in `mutation`, inside
-//! one transaction.
+//! rejections is unit-testable. State-dependent checks — nonce consumption, the
+//! ETF's current review state, the recomputed evaluation, the audit insert —
+//! live in `server`, inside one transaction that holds the row lock.
 //!
 //! What is generic and what is not
 //! -------------------------------
 //! `action`, `choice` and `payload` are application-defined. This module does
-//! not know what actions exist or which choices are legitimate; it proves that
-//! *some* human authorized *this* action on *this* resource for *this* request,
-//! and that nothing has been altered since. The application supplies the action
-//! registry and the choice authority (see `mutation`).
+//! not know what an ETF is; it proves that *some* human authorized *this*
+//! action on *this* resource for *this* request, and that nothing has been
+//! altered since. The application supplies the action registry ([`ACTIONS`])
+//! and the choice authority — for this service, the deterministic evaluation
+//! engine, recomputed under the row lock in `server`.
+//!
+//! The claim names are deliberately domain-neutral (`resource_id`, `choice`,
+//! `expected_choice`, `payload`) and shared verbatim with
+//! `agent/src/nat_streaming_react/approval.py`. For this application they carry:
+//!
+//! | claim             | ETF meaning                                          |
+//! |-------------------|------------------------------------------------------|
+//! | `resource_id`     | canonical `etf_id`, e.g. `VWCE-XETRA`                |
+//! | `choice`          | the decision the human approved                      |
+//! | `expected_choice` | the deterministic decision in force when they chose  |
+//! | `rationale`       | the override rationale they typed                    |
+//! | `payload`         | `llm_recommendation`, `research_note`, `assignee`    |
 
 use std::sync::Arc;
 
@@ -50,17 +63,56 @@ const CLOCK_SKEW_TOLERANCE_SECONDS: i64 = 60;
 /// misconfiguration fails before the first request rather than on it.
 pub const MIN_SECRET_LENGTH: usize = 24;
 
+/// One application-defined mutation.
+pub struct Action {
+    /// Matched against the token's `action` claim.
+    pub name: &'static str,
+    /// Whether this action carries a choice the human selects.
+    pub carries_choice: bool,
+    /// Choices the application accepts at all. A choice outside this set is
+    /// refused even with a valid signature: the gateway bounds shape, the agent
+    /// checks the choice against the options that particular prompt offered, and
+    /// this is the third and authoritative check.
+    pub allowed_choices: &'static [&'static str],
+}
+
+/// Registry of actions this server will apply.
+///
+/// Deliberately a fixed list rather than anything dynamic: the set of things a
+/// human can authorize is a security property of the deployment, not
+/// configuration.
+///
+/// `commit` is the initial review decision and may land on any of the three
+/// decisions. `shortlist` moves an existing candidate onto the shortlist, so
+/// the only choice it accepts is `shortlist` itself — its `expected_choice` is
+/// still the deterministic decision, which is what makes a promotion
+/// recognisable as one. `assign` records a research owner and carries no
+/// decision at all.
+pub const ACTIONS: &[Action] = &[
+    Action {
+        name: "commit",
+        carries_choice: true,
+        allowed_choices: &["reject", "research", "shortlist"],
+    },
+    Action { name: "shortlist", carries_choice: true, allowed_choices: &["shortlist"] },
+    Action { name: "assign", carries_choice: false, allowed_choices: &[] },
+];
+
+pub fn find_action(name: &str) -> Option<&'static Action> {
+    ACTIONS.iter().find(|action| action.name == name)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApprovalClaims {
     pub v: u8,
     pub exp: i64,
-    /// Application-defined action name. Bound by `verify`, dispatched by
-    /// `mutation::apply`.
+    /// Application-defined action name: one of [`ACTIONS`].
     pub action: String,
-    /// The resource this approval is for. Opaque to this module.
+    /// The resource this approval is for — the canonical `etf_id`. Opaque to
+    /// this module.
     pub resource_id: String,
     /// The authenticated end user, taken from the gateway-injected identity
-    /// header and never from the model. This is what the audit trail names.
+    /// header and never from the model. This is what the history names.
     pub actor_id: String,
     /// Correlates the approval to the one authenticated request it belongs to.
     pub request_id: String,
@@ -68,19 +120,23 @@ pub struct ApprovalClaims {
     #[serde(default)]
     pub choice: Option<String>,
     /// The choice the authoritative backend computed at the moment the human was
-    /// asked. Re-derived at execution time; a mismatch voids the token, because
-    /// the world the human was shown no longer holds.
+    /// asked — here, the deterministic decision. Re-derived at execution time; a
+    /// mismatch voids the token, because the world the human was shown no longer
+    /// holds.
     #[serde(default)]
     pub expected_choice: Option<String>,
     /// True when the human chose something other than `expected_choice`.
-    /// Recorded, never trusted: `mutation` re-derives it.
+    /// Recorded, never trusted: it is cross-checked against the value re-derived
+    /// from the recomputed evaluation, so a minter that sets it wrongly is
+    /// caught rather than obeyed.
     #[serde(default)]
     pub override_requested: bool,
-    /// The human's stated reason, required for an override.
+    /// The human's stated reason, required for an override in either direction.
     #[serde(default)]
     pub rationale: Option<String>,
     /// Application-owned fields, carried inside the signature so the mutation
-    /// never depends on the model resending identical text.
+    /// never depends on the model resending identical text. For this service:
+    /// `llm_recommendation`, `research_note` and `assignee`.
     #[serde(default)]
     pub payload: Value,
     /// Redundant with `payload`, which is itself covered by the signature. This
@@ -108,6 +164,22 @@ impl ApprovalClaims {
             .map(str::trim)
             .filter(|value| !value.is_empty())
     }
+
+    /// The model's advisory recommendation, if it offered one.
+    pub fn llm_recommendation(&self) -> Option<&str> {
+        self.payload_str("llm_recommendation")
+    }
+
+    /// The grounded research note to persist: the approved text, or nothing if
+    /// absent or blank.
+    pub fn research_note(&self) -> Option<&str> {
+        self.payload_str("research_note")
+    }
+
+    /// The research owner to record, or nothing if absent or blank.
+    pub fn assignee(&self) -> Option<&str> {
+        self.payload_str("assignee")
+    }
 }
 
 /// Hex SHA-256 of the canonical form of an application payload.
@@ -134,11 +206,7 @@ fn canonical_json(value: &Value) -> String {
             let body: Vec<String> = keys
                 .into_iter()
                 .map(|key| {
-                    format!(
-                        "{}:{}",
-                        Value::String(key.clone()),
-                        canonical_json(&map[key])
-                    )
+                    format!("{}:{}", Value::String(key.clone()), canonical_json(&map[key]))
                 })
                 .collect();
             format!("{{{}}}", body.join(","))
@@ -165,7 +233,8 @@ impl ApprovalVerifier {
     /// Verify signature, version and lifetime, and return the claims.
     ///
     /// Binding is checked separately by [`Self::verify`]; this only proves the
-    /// claims are authentic.
+    /// claims are authentic, which is what lets the HTTP layer route an approval
+    /// to the right action without the caller naming it.
     pub fn decode(&self, token: &str) -> Result<ApprovalClaims, String> {
         let (payload_b64, signature_b64) = token
             .split_once('.')
@@ -205,7 +274,9 @@ impl ApprovalVerifier {
     /// for this request, against the choice the authority just recomputed.
     ///
     /// `expected_choice` is `None` for actions that carry no choice, and the
-    /// token must then not carry one either.
+    /// token must then not carry one either. For this service it is the
+    /// deterministic decision, recomputed under the row lock: if the ETF record
+    /// or the policy moved underneath the approval, the token is void.
     pub fn verify(
         &self,
         token: &str,
@@ -224,15 +295,30 @@ impl ApprovalVerifier {
         if claims.payload_sha256 != payload_hash(&claims.payload) {
             return Err("approval token payload does not match its own signature".to_string());
         }
-        // For choice-bearing actions the authoritative result must still be what
-        // the human was shown: if the resource or the policy changed underneath
-        // the approval, the token is void.
         if claims.expected_choice.as_deref() != expected_choice {
             return Err(if expected_choice.is_none() {
                 "approval token must not carry a choice for this action".to_string()
             } else {
-                "approval token was issued against a different authoritative choice".to_string()
+                "approval token was issued against a different deterministic decision".to_string()
             });
+        }
+        // The action registry is the authority on what may be authorized at all.
+        // A signature proves a human agreed; it does not make an unknown action
+        // or an out-of-vocabulary choice legitimate.
+        let Some(registered) = find_action(action) else {
+            return Err(format!("unknown approval action: {action}"));
+        };
+        match (registered.carries_choice, claims.choice.as_deref()) {
+            (true, None) => {
+                return Err("this action requires a choice and the approval carries none".into());
+            }
+            (false, Some(_)) => {
+                return Err("approval token must not carry a choice for this action".into());
+            }
+            (true, Some(choice)) if !registered.allowed_choices.contains(&choice) => {
+                return Err(format!("{choice:?} is not a choice this action accepts"));
+            }
+            _ => {}
         }
         if claims.actor_id.trim().is_empty()
             || claims.request_id.trim().is_empty()
@@ -261,9 +347,10 @@ pub(crate) mod testing {
     }
 
     pub fn mint_with_secret(secret: &[u8], claims: &ApprovalClaims) -> String {
-        // serde_json with sorted keys is what the Python minter produces via
-        // json.dumps(sort_keys=True); the signature covers the encoded payload,
-        // so both sides only have to agree on the bytes they sign.
+        // Canonical JSON is what the Python minter produces via
+        // json.dumps(sort_keys=True, separators=(",", ":")); the signature covers
+        // the encoded payload, so both sides only have to agree on the bytes
+        // they sign.
         let payload = serde_json::to_value(claims).expect("claims serialize");
         let encoded = canonical_json(&payload);
         let payload_b64 = URL_SAFE_NO_PAD.encode(encoded.as_bytes());
@@ -277,20 +364,30 @@ pub(crate) mod testing {
         mint_with_secret(TEST_SECRET, claims)
     }
 
-    /// A valid choice-bearing approval, as the minter would produce it.
+    /// A valid promotion approval, as the minter would produce it: the engine
+    /// said `research`, the human chose `shortlist` and typed a rationale, and
+    /// the model's advisory recommendation travels in the payload.
     pub fn claims() -> ApprovalClaims {
-        let payload = serde_json::json!({"note": "Escalated after the customer's second follow-up."});
+        let payload = serde_json::json!({
+            "llm_recommendation": "research",
+            "research_note": "Broad developed-market exposure at 0.12% TER; fund size and \
+tracking difference both inside profile bounds."
+        });
         ApprovalClaims {
             v: 1,
             exp: Utc::now().timestamp() + 600,
-            action: "set_ticket_priority".to_string(),
-            resource_id: "TKT-1001".to_string(),
-            actor_id: "support-rep-1".to_string(),
+            action: "commit".to_string(),
+            resource_id: "VWCE-XETRA".to_string(),
+            actor_id: "researcher-1".to_string(),
             request_id: "11111111-1111-4111-8111-111111111111".to_string(),
-            choice: Some("high".to_string()),
-            expected_choice: Some("medium".to_string()),
+            choice: Some("shortlist".to_string()),
+            expected_choice: Some("research".to_string()),
             override_requested: true,
-            rationale: Some("Customer has followed up twice with no resolution.".to_string()),
+            rationale: Some(
+                "Accepting the tracking-difference gap deliberately; the index change is \
+already priced in."
+                    .to_string(),
+            ),
             payload_sha256: payload_hash(&payload),
             payload,
             nonce: "22222222-2222-4222-8222-222222222222".to_string(),
@@ -303,10 +400,10 @@ mod tests {
     use super::testing::*;
     use super::*;
 
-    const ACTION: &str = "set_ticket_priority";
-    const RESOURCE: &str = "TKT-1001";
+    const ACTION: &str = "commit";
+    const RESOURCE: &str = "VWCE-XETRA";
     const REQUEST: &str = "11111111-1111-4111-8111-111111111111";
-    const EXPECTED: Option<&str> = Some("medium");
+    const EXPECTED: Option<&str> = Some("research");
 
     fn check(claims: &ApprovalClaims) -> Result<ApprovalClaims, String> {
         verifier().verify(&mint(claims), ACTION, RESOURCE, REQUEST, EXPECTED)
@@ -315,15 +412,13 @@ mod tests {
     #[test]
     fn a_well_formed_approval_verifies_and_returns_its_claims() {
         let verified = check(&claims()).expect("must verify");
-        assert_eq!(verified.actor_id, "support-rep-1");
-        assert_eq!(verified.choice.as_deref(), Some("high"));
-        assert_eq!(
-            verified.payload_str("note"),
-            Some("Escalated after the customer's second follow-up.")
-        );
-        assert_eq!(
-            verified.effective_rationale(),
-            Some("Customer has followed up twice with no resolution.")
+        assert_eq!(verified.actor_id, "researcher-1");
+        assert_eq!(verified.choice.as_deref(), Some("shortlist"));
+        assert_eq!(verified.expected_choice.as_deref(), Some("research"));
+        assert_eq!(verified.llm_recommendation(), Some("research"));
+        assert!(verified.research_note().expect("note").contains("0.12% TER"));
+        assert!(
+            verified.effective_rationale().expect("rationale").contains("tracking-difference")
         );
     }
 
@@ -342,12 +437,11 @@ mod tests {
     fn a_token_with_a_tampered_payload_is_refused() {
         let token = mint(&claims());
         let (payload_b64, signature) = token.split_once('.').expect("format");
-        let mut payload: Value = serde_json::from_slice(
-            &URL_SAFE_NO_PAD.decode(payload_b64).expect("base64"),
-        )
-        .expect("json");
-        // Escalate the approved change: same signature, different resource.
-        payload["resource_id"] = Value::String("TKT-1002".into());
+        let mut payload: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload_b64).expect("base64"))
+                .expect("json");
+        // Escalate the approved change onto a different fund: same signature.
+        payload["resource_id"] = Value::String("IWDA-AMS".into());
         let tampered = format!(
             "{}.{signature}",
             URL_SAFE_NO_PAD.encode(canonical_json(&payload).as_bytes())
@@ -406,17 +500,16 @@ mod tests {
     /// Binding. A valid approval for one thing must not authorize another.
     #[test]
     fn an_approval_is_bound_to_its_action_resource_and_request() {
-        let valid = claims();
-        let token = mint(&valid);
+        let token = mint(&claims());
         let verifier = verifier();
 
         let wrong_action = verifier
-            .verify(&token, "delete_ticket", RESOURCE, REQUEST, EXPECTED)
+            .verify(&token, "assign", RESOURCE, REQUEST, EXPECTED)
             .expect_err("wrong action");
         assert!(wrong_action.contains("not bound to this action"), "{wrong_action}");
 
         let wrong_resource = verifier
-            .verify(&token, ACTION, "TKT-1002", REQUEST, EXPECTED)
+            .verify(&token, ACTION, "IWDA-AMS", REQUEST, EXPECTED)
             .expect_err("wrong resource");
         assert!(wrong_resource.contains("not bound to this action"), "{wrong_resource}");
 
@@ -429,16 +522,17 @@ mod tests {
         );
     }
 
-    /// The world the human was shown must still hold. If the authoritative
-    /// choice moved under the approval, the token is void rather than applied
-    /// against a state nobody agreed to.
+    /// The world the human was shown must still hold. If the deterministic
+    /// decision moved under the approval — a data correction, a rules-spec
+    /// change — the token is void rather than applied against a state nobody
+    /// agreed to.
     #[test]
-    fn an_approval_is_void_when_the_authoritative_choice_has_moved() {
+    fn an_approval_is_void_when_the_deterministic_decision_has_moved() {
         let token = mint(&claims());
         let error = verifier()
-            .verify(&token, ACTION, RESOURCE, REQUEST, Some("high"))
-            .expect_err("a moved authoritative choice must void the approval");
-        assert!(error.contains("different authoritative choice"), "{error}");
+            .verify(&token, ACTION, RESOURCE, REQUEST, Some("reject"))
+            .expect_err("a moved deterministic decision must void the approval");
+        assert!(error.contains("different deterministic decision"), "{error}");
     }
 
     #[test]
@@ -446,35 +540,89 @@ mod tests {
         let token = mint(&claims());
         let error = verifier()
             .verify(&token, ACTION, RESOURCE, REQUEST, None)
-            .expect_err("a choice-free action must not accept a choice-bearing token");
+            .expect_err("a choice-free verification must not accept a choice-bearing token");
         assert!(error.contains("must not carry a choice"), "{error}");
 
-        let mut choice_free = claims();
-        choice_free.choice = None;
-        choice_free.expected_choice = None;
-        choice_free.override_requested = false;
+        // `assign` is the real choice-free action.
+        let mut assignment = claims();
+        assignment.action = "assign".into();
+        assignment.choice = None;
+        assignment.expected_choice = None;
+        assignment.override_requested = false;
+        assignment.rationale = None;
+        assignment.payload = serde_json::json!({"assignee": "researcher-2"});
+        assignment.payload_sha256 = payload_hash(&assignment.payload);
         let verified = verifier()
-            .verify(&mint(&choice_free), ACTION, RESOURCE, REQUEST, None)
+            .verify(&mint(&assignment), "assign", RESOURCE, REQUEST, None)
             .expect("a choice-free approval must verify");
         assert!(verified.choice.is_none());
+        assert_eq!(verified.assignee(), Some("researcher-2"));
+    }
+
+    /// The registry is closed. A signature proves a human agreed; it does not
+    /// make an unregistered action legitimate.
+    #[test]
+    fn the_action_registry_is_closed_and_addressable_by_name() {
+        for known in ["commit", "shortlist", "assign"] {
+            assert!(find_action(known).is_some(), "{known}");
+        }
+        for unknown in ["delete_etf", "", "COMMIT", "commit ", "trade"] {
+            assert!(find_action(unknown).is_none(), "{unknown:?}");
+        }
+    }
+
+    /// A choice outside the action's vocabulary is refused even with a valid
+    /// signature, and `shortlist` accepts only its own decision.
+    #[test]
+    fn a_choice_outside_the_actions_vocabulary_is_refused() {
+        let mut invented = claims();
+        invented.choice = Some("buy".into());
+        let error = check(&invented).expect_err("must refuse");
+        assert!(error.contains("not a choice this action accepts"), "{error}");
+
+        let mut demoted_shortlist = claims();
+        demoted_shortlist.action = "shortlist".into();
+        demoted_shortlist.choice = Some("reject".into());
+        let error = verifier()
+            .verify(&mint(&demoted_shortlist), "shortlist", RESOURCE, REQUEST, EXPECTED)
+            .expect_err("the shortlist action accepts only a shortlist");
+        assert!(error.contains("not a choice this action accepts"), "{error}");
+
+        let mut legitimate = claims();
+        legitimate.action = "shortlist".into();
+        assert!(
+            verifier()
+                .verify(&mint(&legitimate), "shortlist", RESOURCE, REQUEST, EXPECTED)
+                .is_ok(),
+            "a shortlist promotion must still verify"
+        );
+    }
+
+    #[test]
+    fn a_choice_bearing_action_refuses_an_approval_with_no_choice() {
+        let mut choiceless = claims();
+        choiceless.choice = None;
+        let error = check(&choiceless).expect_err("must refuse");
+        assert!(error.contains("requires a choice"), "{error}");
     }
 
     /// A minter that hashes one payload and ships another is caught before the
-    /// wrong values are persisted under a valid signature.
+    /// wrong note or recommendation is persisted under a valid signature.
     #[test]
     fn a_payload_digest_that_disagrees_with_the_payload_is_refused() {
         let mut inconsistent = claims();
-        inconsistent.payload_sha256 = payload_hash(&serde_json::json!({"note": "something else"}));
+        inconsistent.payload_sha256 =
+            payload_hash(&serde_json::json!({"research_note": "something else"}));
         let error = check(&inconsistent).expect_err("an inconsistent digest must not verify");
         assert!(error.contains("does not match its own signature"), "{error}");
     }
 
     #[test]
     fn the_payload_digest_is_insensitive_to_key_order() {
-        let a = serde_json::json!({"note": "n", "assignee": "support-rep-2"});
-        let b = serde_json::json!({"assignee": "support-rep-2", "note": "n"});
+        let a = serde_json::json!({"research_note": "n", "assignee": "researcher-2"});
+        let b = serde_json::json!({"assignee": "researcher-2", "research_note": "n"});
         assert_eq!(payload_hash(&a), payload_hash(&b));
-        assert_ne!(payload_hash(&a), payload_hash(&serde_json::json!({"note": "n"})));
+        assert_ne!(payload_hash(&a), payload_hash(&serde_json::json!({"research_note": "n"})));
         assert_eq!(payload_hash(&Value::Null), None);
     }
 
@@ -513,7 +661,7 @@ mod tests {
     fn a_token_minted_by_the_python_agent_is_accepted() {
         // Produced by mint_token() in agent/src/nat_streaming_react/approval.py
         // with TEST_SECRET. Regenerate only if the claim format changes.
-        const PYTHON_TOKEN: &str = "eyJhY3Rpb24iOiJzZXRfdGlja2V0X3ByaW9yaXR5IiwiYWN0b3JfaWQiOiJzdXBwb3J0LXJlcC0xIiwiY2hvaWNlIjoiaGlnaCIsImV4cCI6MTc4OTg5OTI4OCwiZXhwZWN0ZWRfY2hvaWNlIjoibWVkaXVtIiwibm9uY2UiOiJkYjVkM2U5OS01NDdlLTQ1OWQtYTIwZi1hOTVkNGRhOThmZDQiLCJvdmVycmlkZV9yZXF1ZXN0ZWQiOnRydWUsInBheWxvYWQiOnsibm90ZSI6IkRvY3VtZW50ZWQgYWZ0ZXIgdGhlIGN1c3RvbWVyJ3Mgc2Vjb25kIGZvbGxvdy11cC4gVW5pY29kZTogWm_DqyDinJMifSwicGF5bG9hZF9zaGEyNTYiOiI1MWFjYmIxMGNmY2YyZWE4MDBkMTI3NjI3YWZlY2FmZGJiNjVkN2IxNDJjOGQ3ZjdhMmJkMWY0NWNiOTFmMGEwIiwicmF0aW9uYWxlIjoiQ3VzdG9tZXIgaGFzIGZvbGxvd2VkIHVwIHR3aWNlIHdpdGggbm8gcmVzb2x1dGlvbi4iLCJyZXF1ZXN0X2lkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwicmVzb3VyY2VfaWQiOiJUS1QtMTAwMSIsInYiOjF9.X21SyZoYnU8OU8fYk23shsM6JugTdWQBhUuyWsNeWtc";
+        const PYTHON_TOKEN: &str = "eyJhY3Rpb24iOiJjb21taXQiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InNob3J0bGlzdCIsImV4cCI6MTc4OTg5OTI4OCwiZXhwZWN0ZWRfY2hvaWNlIjoicmVzZWFyY2giLCJub25jZSI6ImRiNWQzZTk5LTU0N2UtNDU5ZC1hMjBmLWE5NWQ0ZGE5OGZkNCIsIm92ZXJyaWRlX3JlcXVlc3RlZCI6dHJ1ZSwicGF5bG9hZCI6eyJsbG1fcmVjb21tZW5kYXRpb24iOiJyZXNlYXJjaCIsInJlc2VhcmNoX25vdGUiOiJSZXZpZXdlZCB3aXRoIFpvw6sg4pyTIOKAlCBicm9hZCBkZXZlbG9wZWQtbWFya2V0IGV4cG9zdXJlIGF0IDAuMTIlIFRFUi4ifSwicGF5bG9hZF9zaGEyNTYiOiIzZTlkZGY0Mzk1MTRiYWE0MWJhNThlMWQyZjkxYWJhMTgxNDhmMmViNzIxOWU3ZWM3YWIwZjUzMmEwZmNkMGQxIiwicmF0aW9uYWxlIjoiQWNjZXB0aW5nIHRoZSB0cmFja2luZy1kaWZmZXJlbmNlIGdhcCBkZWxpYmVyYXRlbHkuIiwicmVxdWVzdF9pZCI6IjExMTExMTExLTExMTEtNDExMS04MTExLTExMTExMTExMTExMSIsInJlc291cmNlX2lkIjoiVldDRS1YRVRSQSIsInYiOjF9.HZQMf_4xuf289Pa0EhnvLLMQVk9jmSx3Lizj2rZ4vHs";
 
         let (payload_b64, signature_b64) = PYTHON_TOKEN.split_once('.').expect("format");
         let mut mac = HmacSha256::new_from_slice(TEST_SECRET).expect("secret");
@@ -521,17 +669,16 @@ mod tests {
         mac.verify_slice(&URL_SAFE_NO_PAD.decode(signature_b64).expect("base64"))
             .expect("a token minted by the agent must verify in the MCP server");
 
-        let claims: ApprovalClaims = serde_json::from_slice(
-            &URL_SAFE_NO_PAD.decode(payload_b64).expect("base64"),
-        )
-        .expect("the agent's claim set must deserialize into this server's type");
+        let claims: ApprovalClaims =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload_b64).expect("base64"))
+                .expect("the agent's claim set must deserialize into this server's type");
 
         assert_eq!(claims.v, SUPPORTED_VERSION);
-        assert_eq!(claims.action, "set_ticket_priority");
-        assert_eq!(claims.resource_id, "TKT-1001");
-        assert_eq!(claims.actor_id, "support-rep-1");
-        assert_eq!(claims.choice.as_deref(), Some("high"));
-        assert_eq!(claims.expected_choice.as_deref(), Some("medium"));
+        assert_eq!(claims.action, "commit");
+        assert_eq!(claims.resource_id, "VWCE-XETRA");
+        assert_eq!(claims.actor_id, "researcher-1");
+        assert_eq!(claims.choice.as_deref(), Some("shortlist"));
+        assert_eq!(claims.expected_choice.as_deref(), Some("research"));
         assert!(claims.override_requested);
         assert!(!claims.nonce.is_empty());
         // The digest the Python side computed must equal the one this side does.
@@ -541,7 +688,7 @@ mod tests {
             "the two canonical JSON encoders no longer agree"
         );
         assert!(
-            claims.payload_str("note").expect("note").contains("Zoë"),
+            claims.research_note().expect("note").contains("Zoë"),
             "non-ASCII payload text must survive both encoders"
         );
     }
@@ -550,10 +697,11 @@ mod tests {
     fn blank_optional_text_is_reported_as_absent_rather_than_empty() {
         let mut blank = claims();
         blank.rationale = Some("   ".into());
-        blank.payload = serde_json::json!({"note": "  "});
+        blank.payload = serde_json::json!({"research_note": "  ", "assignee": ""});
         blank.payload_sha256 = payload_hash(&blank.payload);
         let verified = check(&blank).expect("must verify");
         assert_eq!(verified.effective_rationale(), None);
-        assert_eq!(verified.payload_str("note"), None);
+        assert_eq!(verified.research_note(), None);
+        assert_eq!(verified.assignee(), None);
     }
 }

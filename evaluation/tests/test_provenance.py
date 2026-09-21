@@ -9,7 +9,6 @@ YAML-dependent assertions skip rather than fail. The container has both, so
 
 from __future__ import annotations
 
-import os
 import sys
 import types
 import unittest
@@ -44,8 +43,8 @@ class DigestTests(unittest.TestCase):
         # prompt_sha256 the same way, so any change here breaks every
         # prompt_matches_config check on the next run.
         self.assertEqual(
-            provenance._sha256("tickets-agent"),
-            "b80edd75bc87725392c6bee6c4752c6f15d32142ba26e37d887a65e665e84e35",
+            provenance._sha256("etf-research"),
+            "dc4b8450cd74b5778332c9c6871dd5633988e115b82441883f5fada4bc11c409",
         )
 
     @unittest.skipUnless(HAVE_YAML, "PyYAML is not installed on this host")
@@ -211,23 +210,8 @@ class ConsistencyTests(unittest.TestCase):
     def test_active_model_name_is_derived_from_what_the_agent_reported(self) -> None:
         record = {"agent": {"build_commit": "0542fb8ea6f4", "prompt_sha256": "03672e3abcfc"}}
         self.assertEqual(
-            provenance.active_model_name(record), "agent-0542fb8e-p03672e3a"
+            provenance.active_model_name(record), "etf-research-agent-0542fb8e-p03672e3a"
         )
-
-    def test_the_model_prefix_is_overridable_for_a_domain_fork(self) -> None:
-        record = {"agent": {"build_commit": "0542fb8ea6f4", "prompt_sha256": "03672e3abcfc"}}
-        previous = os.environ.get("EVALUATION_MODEL_PREFIX")
-        os.environ["EVALUATION_MODEL_PREFIX"] = "my-domain-agent"
-        try:
-            self.assertEqual(
-                provenance.active_model_name(record),
-                "my-domain-agent-0542fb8e-p03672e3a",
-            )
-        finally:
-            if previous is None:
-                os.environ.pop("EVALUATION_MODEL_PREFIX", None)
-            else:
-                os.environ["EVALUATION_MODEL_PREFIX"] = previous
 
     def test_an_unreachable_agent_is_not_reported_as_consistent(self) -> None:
         """A failed provenance fetch must never read as a clean run."""

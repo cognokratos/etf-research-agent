@@ -387,7 +387,7 @@ mod tests {
     fn the_expected_issuer_is_the_public_realm_url() {
         let config = std::sync::Arc::new(config());
         let keycloak = KeycloakClient::new(Client::new(), config);
-        assert_eq!(keycloak.expected_issuer(), "http://localhost:8082/realms/tickets");
+        assert_eq!(keycloak.expected_issuer(), "http://localhost:8082/realms/etf-research");
         assert!(
             keycloak.internal("protocol/openid-connect/token").starts_with("http://keycloak:8080/"),
             "tokens are fetched over the internal URL"

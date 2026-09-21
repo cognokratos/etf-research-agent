@@ -28,12 +28,18 @@ from evaluation.config import agent_workflow_url
 def _configured_tool_names() -> frozenset[str]:
     """Tool names this evaluation run recognises as workflow tool calls.
 
-    The template ships the sample application's tools. A domain application
-    overrides the set with EVALUATION_TOOL_NAMES instead of editing the harness,
-    so the generic scorers stay reusable.
+    The default is this application's read tools. It stays overridable with
+    EVALUATION_TOOL_NAMES rather than hardcoded, so the harness does not need
+    editing when the tool surface changes -- docker-compose.yml sets it
+    explicitly, including the three approval actions the mutation checks look
+    for.
     """
 
-    configured = os.getenv("EVALUATION_TOOL_NAMES", "search_tickets,get_ticket")
+    configured = os.getenv(
+        "EVALUATION_TOOL_NAMES",
+        "search_etfs,get_etf,evaluate_etf,get_research_summary,"
+        "get_research_context,get_etf_history",
+    )
     return frozenset(name.strip() for name in configured.split(",") if name.strip())
 
 
@@ -50,7 +56,7 @@ KNOWN_TOOL_NAMES = _configured_tool_names()
 # `guardrail_<stage>_` prefix so a rename degrades to a still-captured event
 # rather than to silence.
 INPUT_GUARDRAIL_EVENT = "guardrail_input_self_check_decision"
-OUTPUT_GUARDRAIL_EVENT = "guardrail_output_regex_presidio_decision"
+OUTPUT_GUARDRAIL_EVENT = "guardrail_output_regex_decision"
 INPUT_GUARDRAIL_EVENT_PREFIX = "guardrail_input_"
 OUTPUT_GUARDRAIL_EVENT_PREFIX = "guardrail_output_"
 

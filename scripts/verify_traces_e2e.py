@@ -58,7 +58,7 @@ def ask(question: str, request_id: str, timeout: int) -> str:
     script = (
         'curl -sS -N --max-time {timeout} -X POST '
         '-H "Authorization: Bearer $AGENT_API_KEY" '
-        '-H "x-authenticated-user-id: trace-test-support-rep" '
+        '-H "x-authenticated-user-id: trace-test-researcher" '
         '-H "x-request-id: {request_id}" '
         '-H "content-type: application/json" '
         "-d '{payload}' http://agent:8000/v1/workflow/full"
@@ -258,9 +258,9 @@ def scenario_basic(timeout: int) -> None:
 
 
 def scenario_tool_call(timeout: int) -> None:
-    print("\n[2/5] tool call: question -> agent -> get_ticket -> answer")
+    print("\n[2/5] tool call: question -> agent -> get_etf -> answer")
     request_id = f"trace-e2e-tool-{int(time.time())}"
-    question = "Show me the complete details for ticket TKT-1001." + READ_ONLY_SUFFIX
+    question = "Show me the complete details for VWCE-XETRA." + READ_ONLY_SUFFIX
     try:
         ask(question, request_id, timeout)
     except InteractionPaused:
@@ -269,7 +269,7 @@ def scenario_tool_call(timeout: int) -> None:
     time.sleep(10)
     trace = latest_trace(request_id)
     root = check_single_tree(trace, "tool")
-    tools = [name for name in names(trace) if name.startswith("tickets_mcp__")]
+    tools = [name for name in names(trace) if name.startswith("etf_mcp__")]
     if not tools:
         fail(f"no MCP tool spans in the trace: {names(trace)}")
     print(f"  ok: MCP tool spans preserved: {sorted(set(tools))}")
@@ -277,11 +277,11 @@ def scenario_tool_call(timeout: int) -> None:
 
 
 def scenario_multiple_tool_calls(timeout: int) -> None:
-    print("\n[3/5] multiple tool calls: search_tickets -> get_ticket -> answer")
+    print("\n[3/5] multiple tool calls: search_etfs -> evaluate_etf -> answer")
     request_id = f"trace-e2e-multitool-{int(time.time())}"
     try:
         ask(
-            "Show me my open tickets, then the details for the first one."
+            "Show me the highest-scoring ETFs, then evaluate the first one."
             + READ_ONLY_SUFFIX,
             request_id,
             timeout,
@@ -292,7 +292,7 @@ def scenario_multiple_tool_calls(timeout: int) -> None:
     time.sleep(10)
     trace = latest_trace(request_id)
     check_single_tree(trace, "multi-tool")
-    tools = [name for name in names(trace) if name.startswith("tickets_mcp__")]
+    tools = [name for name in names(trace) if name.startswith("etf_mcp__")]
     if len(tools) < 2:
         print(f"  note: the model made {len(tools)} tool call(s); trace structure still verified")
     else:
@@ -312,8 +312,8 @@ def scenario_guardrail_block(timeout: int) -> None:
     except InteractionPaused:
         paused("guardrail", request_id)
         return
-    if "TKT-" in stream or "ticket_id" in stream:
-        fail("a blocked request returned ticket data")
+    if "VWCE" in stream or "etf_id" in stream:
+        fail("a blocked request returned fund data")
     time.sleep(10)
     trace = latest_trace(request_id)
     check_single_tree(trace, "guardrail")

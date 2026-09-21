@@ -16,7 +16,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { executionId, interactionId } = await context.params;
   const cookieHeader = request.headers.get("cookie") ?? "";
   const csrfCookieName =
-    process.env.GATEWAY_CSRF_COOKIE ?? "tickets_gateway_csrf";
+    process.env.GATEWAY_CSRF_COOKIE ?? "etf_research_gateway_csrf";
   const csrfToken = cookieValue(cookieHeader, csrfCookieName);
   const body = await request.text();
 

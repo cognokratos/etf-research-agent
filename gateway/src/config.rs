@@ -5,9 +5,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use url::Url;
 
-pub const DEFAULT_SESSION_COOKIE: &str = "tickets_gateway_session";
-pub const DEFAULT_CSRF_COOKIE: &str = "tickets_gateway_csrf";
-pub const DEFAULT_LOGIN_COOKIE: &str = "tickets_gateway_login";
+pub const DEFAULT_SESSION_COOKIE: &str = "etf_research_gateway_session";
+pub const DEFAULT_CSRF_COOKIE: &str = "etf_research_gateway_csrf";
+pub const DEFAULT_LOGIN_COOKIE: &str = "etf_research_gateway_login";
 pub const BROWSER_COOKIE_PATH: &str = "/api/gateway";
 pub const OIDC_CALLBACK_PATH: &str = "/api/gateway/auth/callback";
 
@@ -55,8 +55,8 @@ impl GatewayConfig {
             ),
             keycloak_public_url: env_or("KEYCLOAK_PUBLIC_URL", "http://localhost:8082"),
             keycloak_internal_url: env_or("KEYCLOAK_INTERNAL_URL", "http://keycloak:8080"),
-            keycloak_realm: env_or("KEYCLOAK_REALM", "tickets"),
-            oidc_client_id: env_or("KEYCLOAK_GATEWAY_CLIENT_ID", "tickets-gateway"),
+            keycloak_realm: env_or("KEYCLOAK_REALM", "etf-research"),
+            oidc_client_id: env_or("KEYCLOAK_GATEWAY_CLIENT_ID", "etf-research-gateway"),
             oidc_client_secret: required_env("KEYCLOAK_GATEWAY_CLIENT_SECRET")?,
             agent_workflow_url: env_or("AGENT_WORKFLOW_URL", "http://agent:8000/v1/workflow/full"),
             agent_api_key: required_env("AGENT_API_KEY")?,
@@ -221,8 +221,8 @@ pub mod test_support {
             oidc_callback_url: "http://localhost:3000/api/gateway/auth/callback".into(),
             keycloak_public_url: "http://localhost:8082".into(),
             keycloak_internal_url: "http://keycloak:8080".into(),
-            keycloak_realm: "tickets".into(),
-            oidc_client_id: "tickets-gateway".into(),
+            keycloak_realm: "etf-research".into(),
+            oidc_client_id: "etf-research-gateway".into(),
             oidc_client_secret: "secret".into(),
             agent_workflow_url: "http://agent:8000/v1/workflow/full".into(),
             agent_api_key: "key".into(),
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn cookie_names_reject_anything_that_would_break_the_header() {
-        for name in ["tickets_gateway_session", "a", "x-y.z", "A1!#$%&'*+-.^_`|~"] {
+        for name in ["etf_research_gateway_session", "a", "x-y.z", "A1!#$%&'*+-.^_`|~"] {
             assert!(valid_cookie_name(name), "{name}");
         }
         for name in ["", "has space", "has=equals", "has;semi", "quoted\"", "tab\t", "unicodé"] {

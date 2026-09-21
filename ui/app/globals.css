@@ -220,7 +220,7 @@ textarea {
   margin: 0.15em 0;
 }
 
-/* Nested lists are how the model expresses per-record detail; keep them tight. */
+/* Nested lists are how the model expresses per-fund detail; keep them tight. */
 .assistant-text li > ul,
 .assistant-text li > ol {
   margin: 0.15em 0 0.35em;
@@ -328,6 +328,28 @@ textarea {
   padding: 2px 0 2px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
+}
+
+/* A one-line statement of what the agent is for, under the heading. The
+   template this is built on referenced this class without defining it, so the
+   subtitle rendered as an unstyled paragraph. */
+.scenario-subtitle {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #98a1b0;
+}
+
+/* The limitation notice is part of the product, not fine print bolted on: the
+   whole point of the system is that a score is a policy result rather than a
+   prediction, so the welcome screen says so where a first-time user reads it. */
+.disclaimer {
+  margin: 26px 0 0;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #7c8595;
+  border-top: 1px solid #262b35;
+  padding-top: 14px;
 }
 
 .tool-card {

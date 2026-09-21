@@ -81,7 +81,7 @@ the workflow root span's answer says nothing about what a tool-call span or an
 LLM-call span carries.
 
 The guardrail middleware records its own pre/post hashes separately on its
-`guardrail.output.regex_presidio` span and keeps raw pre-mask text off spans
+`guardrail.output.regex` span and keeps raw pre-rail text off spans
 unless `GUARDRAILS_TRACE_CAPTURE_RAW_OUTPUT` is explicitly enabled — that
 switch is independent of the workflow root span's answer described above.
 
@@ -119,7 +119,7 @@ must get past two independent controls to be exported.
 | --- | --- | --- |
 | `NAT_TRACE_CAPTURE_CONTENT` | `true` | Record the readable question and answer. Disabling still records errors — a failure signal is not request content, and a root span with no output and no reason is what this pipeline exists to avoid. |
 | `NAT_TRACE_CONTENT_MAX_CHARS` | `65536` | Per-field bound; truncation is marked with `nat.trace.content_truncated` |
-| `OTEL_SERVICE_NAME` | `tickets-agent` | MLflow experiment / service name |
+| `OTEL_SERVICE_NAME` | `etf-research-agent` | MLflow experiment / service name |
 | `OTEL_COLLECTOR_TRACES_ENDPOINT` | collector | OTLP/HTTP endpoint |
 
 Disabling capture here stops *this package* adding readable attributes. It does

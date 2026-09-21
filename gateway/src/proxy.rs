@@ -531,9 +531,9 @@ mod tests {
     #[test]
     fn application_defined_choices_pass_structural_validation() {
         for (id, value) in [
-            ("escalate", "escalate"),
-            ("close", "close"),
-            ("assign", "analyst-7"),
+            ("shortlist", "shortlist"),
+            ("research", "research"),
+            ("assign", "researcher-7"),
             ("cancel", CANCEL_SENTINEL),
         ] {
             assert!(validate_interaction_response(&radio(id, value)).is_ok(), "{id}/{value}");
@@ -546,8 +546,8 @@ mod tests {
     #[test]
     fn a_cancellation_must_be_unambiguous() {
         assert!(validate_interaction_response(&radio("cancel", CANCEL_SENTINEL)).is_ok());
-        assert!(validate_interaction_response(&radio("cancel", "escalate")).is_err());
-        assert!(validate_interaction_response(&radio("escalate", CANCEL_SENTINEL)).is_err());
+        assert!(validate_interaction_response(&radio("cancel", "shortlist")).is_err());
+        assert!(validate_interaction_response(&radio("shortlist", CANCEL_SENTINEL)).is_err());
     }
 
     #[test]
@@ -558,13 +558,13 @@ mod tests {
         let long = "x".repeat(MAX_OPTION_ID_CHARS + 1);
         assert!(validate_interaction_response(&radio(&long, "x")).is_err());
 
-        let mut oversized = radio("escalate", "escalate");
+        let mut oversized = radio("shortlist", "shortlist");
         if let InteractionResponsePayload::Radio { selected_option } = &mut oversized.response {
             selected_option.label = "x".repeat(MAX_OPTION_LABEL_CHARS + 1);
         }
         assert!(validate_interaction_response(&oversized).is_err());
 
-        let mut oversized = radio("escalate", "escalate");
+        let mut oversized = radio("shortlist", "shortlist");
         if let InteractionResponsePayload::Radio { selected_option } = &mut oversized.response {
             selected_option.description = "x".repeat(MAX_OPTION_DESCRIPTION_CHARS + 1);
         }
@@ -595,7 +595,7 @@ mod tests {
         let text = |text: &str| InteractionProxyRequest {
             response: InteractionResponsePayload::Text { text: text.into() },
         };
-        assert!(validate_interaction_response(&text("the customer is known to us")).is_ok());
+        assert!(validate_interaction_response(&text("the tracking difference is acceptable")).is_ok());
         assert!(validate_interaction_response(&text("   ")).is_err());
         assert!(validate_interaction_response(&text("")).is_err());
         assert!(
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn header_values_survive_encoding_instead_of_being_dropped() {
-        assert_eq!(header_safe("analyst-1"), "analyst-1");
+        assert_eq!(header_safe("researcher-1"), "researcher-1");
         assert_eq!(header_safe("Zoë Smith"), "Zo%C3%AB Smith");
         assert_eq!(header_safe("100%"), "100%25");
         assert_eq!(header_safe("line\nbreak"), "line%0Abreak");
@@ -631,7 +631,7 @@ mod tests {
             username: "zoë".into(),
             email: Some("zoë@example.test".into()),
             name: Some("Zoë".into()),
-            roles: vec!["analyst".into(), "reviewer".into()],
+            roles: vec!["researcher".into(), "reviewer".into()],
         };
         let request = reqwest::Client::new().post("http://agent.test/");
         let request = identity_headers(request, &user, true).expect("headers must encode");
@@ -640,7 +640,7 @@ mod tests {
         let header = |name: &str| built.headers().get(name).and_then(|v| v.to_str().ok());
         assert_eq!(header("x-authenticated-user-id"), Some(user.id.as_str()));
         assert_eq!(header("x-authenticated-username"), Some("zo%C3%AB"));
-        assert_eq!(header("x-authenticated-roles"), Some("analyst,reviewer"));
+        assert_eq!(header("x-authenticated-roles"), Some("researcher,reviewer"));
         assert!(header("x-authenticated-email").is_some(), "email header was dropped");
     }
 }

@@ -9,9 +9,10 @@ than one that is absent, because it is believed.
 | --- | --- | --- |
 | Nonce conflict under real concurrency | Needs a live PostgreSQL; the constraint is a primary key, enforced by the database | Two concurrent spends of one approval token against a running cluster |
 | Rollback of a failed audit insert | Same | Break the audit insert and confirm the status is unchanged and the nonce free |
-| End-to-end approval through the browser | Needs a cluster, a model that calls the function, and a human | Enable the feature and follow [APPROVALS.md](APPROVALS.md) |
+| End-to-end approval through a real browser | Needs a cluster, a model, and a human at the keyboard | `make dev`, then follow [DEMO.md](DEMO.md). `make verify-hitl` drives the same path with scripted answers and no browser |
 | Keycloak login through a real browser | Needs the cluster | `make dev`, then sign in |
-| The evaluation suites' actual scores | Non-deterministic and model-dependent | `make eval-all` with a model available |
+| The live evaluation suites' actual scores | Non-deterministic and model-dependent | `make eval-all` with a model available; the figures last measured are in [EVALUATION_ANALYSIS.md](EVALUATION_ANALYSIS.md) |
+| The *deterministic* engine's scores | — | Fully tested and gated: `make rules-test` asserts every shipped fund and every labelled case, with no model involved |
 | Trace export reaching MLflow | Needs the cluster and a model | `make trace-test` |
 
 The `make` targets above exist and are documented; they are simply not part of
@@ -25,12 +26,18 @@ user turns, because doing so made one refusal poison the rest of a conversation.
 The same caller can send that text as the latest turn, where the full rail does
 screen it. See [GUARDRAILS.md](GUARDRAILS.md).
 
-**PII masking does not apply to streamed text.** On the streaming path NeMo uses
-an action's result only to decide blocked/not-blocked. Credential protection is
-the regex rail's job; masking takes effect on the non-streaming path. The
-configured `score_threshold` is also not honoured by the pinned release's masking
-action — the effective floor is Guardrails' hardcoded 0.4. Both are asserted by
-`verify_output_guardrails.py` so they cannot drift unnoticed.
+**There is no PII protection on the output rail.** This application enables
+deterministic secret-leakage patterns only, and does not install Presidio. That
+is a deliberate domain decision — generic NER masking corrupts the ISINs,
+expense ratios, fund sizes and scores that *are* the answer — and it is the right
+trade only as long as the ETF snapshot carries no personal data. It ships with
+none. If yours does, this decision has to be revisited; see *Why masking is off
+here* in [GUARDRAILS.md](GUARDRAILS.md) for the three coordinated changes that
+turn it on.
+
+The masking path itself remains implemented and tested, and
+`verify_output_guardrails.py` skips those checks cleanly when Presidio is absent
+rather than passing them vacuously.
 
 **Header redaction is not content redaction.** The telemetry processor removes
 credential-bearing headers. A secret inside a tool result or a model answer is
@@ -41,20 +48,28 @@ out.
 
 **An interaction with no recorded owner is allowed through** unless
 `HITL_STRICT_INTERACTION_OWNERSHIP=true`, so NAT's own OAuth consent flow keeps
-working. Every interaction the approval module creates *is* recorded.
+working. Every interaction the three approval functions create *is* recorded, so
+this affects nothing in the shipped configuration.
+
+**The advisory ceiling is enforced, not the model's honesty.** A model may never
+assert a recommendation more optimistic than the engine's decision, and the MCP
+refuses a token that does. What no layer can check is whether the model reported
+the engine's decision faithfully in its *prose* — so the decision the mutation
+applies is read from the signed claims and re-derived from a recomputed
+evaluation, never from what the answer said. The `evaluation` suite measures the
+prose; the boundary does not depend on it.
 
 ## Resource requirements
 
-`make verify-output-guardrails` loads Presidio's analyzer, which pulls spaCy's
-`en_core_web_lg` into memory — roughly 600 MB on top of the agent's own
-footprint. On a Docker VM already near capacity the kernel kills it, which
-surfaces as a bare `exit 137` rather than a failing assertion. The script warns
-before that point. Give Docker headroom, or run the same script on the host
-where the dependencies are installed.
+Not an issue in the shipped configuration: Presidio and spaCy's
+`en_core_web_lg` are not installed, so `make verify-output-guardrails` skips the
+masking checks and stays small.
 
-Observed: on a 7.7 GB Docker VM with MLflow at 2 GB and an unrelated stack
-running, the masking half was OOM-killed while the configuration, pattern and
-wiring halves passed. The same script passed in full on the host.
+It becomes one if you enable masking. The analyzer pulls roughly 600 MB into
+memory on top of the agent's own footprint, and on a Docker VM already near
+capacity the kernel kills it — surfacing as a bare `exit 137` rather than a
+failing assertion. The script warns before that point. Give Docker headroom, or
+run it on the host.
 
 ## Dependency constraints
 
@@ -89,5 +104,10 @@ This is a local demonstration. Add:
 
 The repository declares **Apache-2.0** in `gateway/Cargo.toml` and in the SPDX
 headers of the Python sources under `agent/src/`. There is no root `LICENSE`
-file. Anyone forking this should add one that matches those declarations, or
-change the declarations deliberately — not both at once, and not silently.
+file.
+
+An earlier revision of this branch added an **MIT** `LICENSE` at the root while
+leaving those Apache-2.0 declarations in place, which is a conflict rather than a
+choice. It is not carried here. Adding a root licence is the right thing to do —
+but it has to match the in-source declarations, or those have to change
+deliberately; not both at once, and not silently.

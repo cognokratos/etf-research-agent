@@ -1,147 +1,275 @@
-# Security
+# Security model
 
-Trust boundaries are in [ARCHITECTURE.md](ARCHITECTURE.md). This describes what
-each control does and how to check it.
+The controls, why each exists, and what a total compromise of the model would
+achieve. [`ARCHITECTURE.md`](ARCHITECTURE.md) covers the design decisions behind
+them; [`VERIFICATION.md`](VERIFICATION.md) maps every control to the command that
+proves it.
 
-## Browser authentication
+## Authentication
 
-Keycloak Authorization Code flow with PKCE (S256), run entirely by the Rust
-gateway. The browser never holds an OIDC token.
+The Rust gateway acts as the browser-facing BFF. Keycloak performs OIDC
+authentication. Session and login cookies are HttpOnly; state-changing browser
+requests are protected with a CSRF token. HTTP redirects from the gateway's
+internal client are disabled, so trust is never forwarded across an unexpected
+redirect target.
 
-* **PKCE** — verifier held server-side in a pending-login entry, challenge sent
-  to the authorization endpoint.
-* **`state`** — compared in constant time; the pending login is removed *before*
-  validation, so a replayed callback finds nothing.
-* **`nonce`** — required in the ID token and compared in constant time.
-* **ID token** — RS256 only, signature checked against cached JWKS, issuer
-  pinned to the *public* realm URL (what the browser was redirected to, not the
-  internal URL the gateway dials), audience pinned to the client id, `exp`
-  enforced.
+## Network isolation
 
-### Cookies
+Compose declares one network per trust relationship rather than a single flat
+network. Membership decides which containers can route to a service; publishing a
+host port decides whether the host and browser can.
 
-| Cookie | Attributes | Why |
-| --- | --- | --- |
-| session | `HttpOnly`, `SameSite=Lax`, `Path=/api/gateway` | Opaque id; the tokens stay server-side |
-| CSRF | readable, `SameSite=Strict`, `Path=/api/gateway` | The UI must echo it into `x-csrf-token` |
-| login | `HttpOnly`, `SameSite=Lax`, `Path=/api/gateway/auth/callback` | Exists only for the callback hop |
+| Network | Members | What it allows |
+|---|---|---|
+| `edge` | ui, keycloak, mlflow, mcp-inspector, otel-collector | the only services with published host ports |
+| `gateway_net` | ui, gateway | assistant-ui reaching the gateway |
+| `auth_net` | gateway, keycloak, keycloak-realm-init | the OIDC backchannel |
+| `agent_net` | gateway, evaluator, agent | the only route to NAT |
+| `mcp_net` | agent, mcp-inspector, mcp-server | the only route to MCP |
+| `data_net` | mcp-server, postgres | the only route to the database |
+| `telemetry_net` | agent, evaluator, otel-collector, mlflow | trace export |
 
-`Secure` is added to all of them when `GATEWAY_COOKIE_SECURE=true`. That flag is
-parsed strictly: an unrecognised value is an error rather than silently `false`,
-because resolving a security flag toward the weaker setting on a typo is how
-`GATEWAY_COOKIE_SECURE=Ture` ships cookies without `Secure`.
+NAT, MCP, PostgreSQL and the gateway publish no host ports, so none of them is
+reachable from the host or the browser. assistant-ui — the most exposed
+container — can reach only the gateway, so a server-side request forgery there
+cannot reach the agent runtime, the tools, or the database.
 
-### CSRF
+The networks are deliberately **not** `internal: true`. That flag removes a
+network's default route, i.e. it blocks *egress*; inbound reachability is already
+governed by published ports. Marking the agent's networks internal would break
+the model endpoint (`host.docker.internal` locally, a hosted endpoint in
+production) without adding protection this topology does not already have.
 
-Three-way: the double-submit cookie, the header echoing it, and the token held
-server-side for that session. The third comparison is what makes cookie
-shadowing useless — an attacker who can plant a cookie still cannot know the
-session's own token.
+`make network-test` asserts these properties against the running cluster, and
+`scripts/verify_security_config.py` asserts exact network membership against the
+resolved Compose configuration, so opening a new east-west path is a reviewed
+change rather than a silent one.
 
-## Session handling
+## Service authentication
 
-Sessions are in memory: one gateway instance, and a restart logs everyone out.
-That is a deliberate limit of this deployment.
+- Gateway → NAT: `AGENT_API_KEY` (received by NAT as `NAT_GATEWAY_API_KEY`)
+- NAT → MCP: `MCP_API_KEY`
+- NAT HITL signer ↔ MCP verifier: `HITL_APPROVAL_SECRET`
 
-What is not optional is the write-back rule. A session read, an await, and a
-write-back are three separate moments, and a write-back may only land on the
-session it was derived from. Every update quotes the generation it read and
-resolves to `Applied`, `Superseded` or `Gone`. Without it:
+These are intentionally separate credentials.
 
-* a token refresh in flight during logout re-inserts the session logout just
-  removed, so logging out does not reliably revoke anything;
-* two requests crossing the access-token boundary let the loser's stale tokens
-  overwrite the winner's;
-* with refresh-token rotation the loser's grant is rejected, and revoking on
-  that failure logs the user out even though the winner just installed a working
-  session.
+Network isolation does not make the NAT credential redundant, because the two
+controls answer different questions. Isolation answers *can this packet arrive*;
+authentication answers *is this caller the gateway*. NAT trusts
+`x-authenticated-user-id` to establish the identity that is then HMAC-bound into
+a single-use approval token and written to the append-only history, so any party
+able to open a connection to NAT could otherwise mint an approval attributed to
+an arbitrary person.
 
-Keycloak issues 5-minute access tokens here, so an active user crosses that
-boundary constantly; this is reached in normal use, not only under attack.
+NAT enforces the credential from `nat_streaming_react.fastapi_worker`, loaded
+through NAT's supported `general.front_end.runner_class` extension point. It is
+pure ASGI middleware, so it cannot buffer the streamed response, it compares in
+constant time, and it removes `Authorization` from the ASGI scope after
+validation so no NAT component, session metadata store or telemetry exporter
+observes the credential. Only `/health`, `/health/live` and `/health/ready` are
+unauthenticated.
 
-Roles are re-read from `userinfo` on every refresh. They used to be captured
-once at login and forwarded unchanged for the whole 8-hour session TTL, so a
-role revoked in Keycloak stayed in effect.
+`GET /version`, which reports the agent's build commit, prompt digests and model
+binding so an evaluation run can name what it measured, is deliberately **not**
+in that set: the evaluator already holds the service credential, so there is no
+reason to widen the unauthenticated surface. It returns digests only, never
+prompt text — the system prompt forbids revealing hidden prompts, and an endpoint
+serving them would be the same disclosure from the other side.
 
-## Service credentials
+mTLS or workload identity is not used, and would not be proportional here: there
+is one credential between two trusted services on a private network. It becomes
+justified with many-to-many service authentication, a network you do not control,
+or a requirement for automatic credential rotation.
 
-| From | To | Variable | Notes |
-| --- | --- | --- | --- |
-| gateway | NAT | `AGENT_API_KEY` → `NAT_GATEWAY_API_KEY` | Constant-time compare; stripped from the ASGI scope after validation so NAT session metadata and telemetry never see it |
-| evaluator | NAT | `AGENT_API_KEY` | Same endpoint, bypassing the browser path |
-| NAT | MCP | `MCP_API_KEY` | Constant-time compare; removed from the request before RMCP logging |
+## Trusted human identity
 
-`make security-config-test` asserts the gateway, evaluator and NAT agree on
-`AGENT_API_KEY`, and NAT and MCP on `MCP_API_KEY`, from the *resolved* Compose
-configuration.
+The browser cannot choose `actor_id`. After authenticating the session, the
+gateway injects `x-authenticated-user-id` and `x-request-id`. The HITL function
+reads these from NAT request context and embeds them into the signed approval
+token. The MCP writes the signed identity and request ID into the history event.
 
-## Request validation
+## Human-in-the-loop properties
 
-The gateway re-serializes every chat request from its parsed schema, so anything
-the browser sent beyond the declared fields does not survive. `deny_unknown_fields`
-means an extra key is an error rather than a passthrough. Only `user` and
-`assistant` roles are accepted — a `system` or `tool` role from the browser would
-be an instruction channel straight into the prompt. Message count, per-message
-characters and total characters are all bounded, counted in characters rather
-than bytes.
+- explicit confirmation for every state change;
+- the **deterministic decision is the default** presented, always; a model
+  recommendation is displayed as advisory context and never relabels the default,
+  so confirming the engine's own decision is never recorded as an override;
+- a text rationale required for any human override, in either direction;
+- everything the chosen decision requires is collected from the person: a shortlist
+  with no model-drafted research note prompts for one, so a human-initiated
+  promotion cannot be refused for a field the *model* omitted;
+- approval bound to the exact payload, including the research note by hash;
+- approval bound to the deterministic decision the human was shown, so a policy
+  or data change between display and approval voids the token;
+- the override flag must agree with whether the approved decision actually differs
+  from the engine's, so an override cannot be asserted where none happened or
+  omitted where one did;
+- ten-minute default expiry, with a thirty-minute ceiling the *verifier* enforces
+  rather than trusting the minter's own claim;
+- random nonce, consumed exactly once in the same transaction as the mutation;
+- HMAC SHA-256 integrity;
+- hard constraints rechecked *after* approval, so an approved change can still be
+  refused — and the model is told so in those words.
 
-## Availability
+### Why the model must not hold the default either way
 
-* **Per-session concurrent streams** (`GATEWAY_MAX_STREAMS_PER_SESSION`, default
-  4). The permit lives inside the response stream, so it is released on
-  completion, error and browser disconnect alike.
-* **Pending logins** are bounded and evict oldest-first rather than refusing the
-  newest. `/auth/login` needs no credentials and each call held a slot for ten
-  minutes, so a thousand anonymous calls used to lock every user out for that
-  long.
-* **Explicit upstream timeouts** on every non-streaming call
-  (`GATEWAY_UPSTREAM_TIMEOUT_SECONDS`, default 10). `connect_timeout` covers only
-  TCP setup, so a Keycloak that accepts the connection and then stalls used to
-  hang the request — and since refresh sits inside session authentication, that
-  hung every authenticated request. The proxied chat response deliberately has
-  **no** request timeout: it is a long-lived event stream.
-* **JWKS** cached for 5 minutes; a forced refetch on an unknown `kid` is floored
-  at 30 seconds, so an attacker cannot turn invented key ids into unbounded load
-  on Keycloak.
+The interesting case is not a model trying to promote a fund — that is refused at
+the tool and again at the mutation. It is a model recommending something *more
+conservative*, which policy permits.
 
-## Error handling
+If a permitted recommendation becomes the default, then the model has acquired
+decision authority in one direction while being denied it in the other, and the
+audit trail inverts: a human confirming the engine's decision is recorded as
+overriding the system, and a human following the model is recorded as agreeing with
+it. An injection that cannot promote a fund could still relabel every confirmation
+as a human override, which corrupts precisely the record that exists to show who
+decided what.
 
-Upstream error bodies are not relayed to the browser. A reqwest error embeds
-`http://keycloak:8080`, and a Keycloak rejection body describes the realm; this
-is an unauthenticated boundary and those strings describe internal topology. The
-caller learns which dependency failed, the log keeps the cause.
+`rules::reconcile_decision` derives the default from the engine alone, both mutation
+paths call it, and the approval-boundary suite drives the case end to end: engine
+`shortlist`, model `research`, human `shortlist` — committed with
+`override_applied: false`.
 
-## Identity headers
+## Non-bypassable constraints
 
-The gateway builds a **fresh** upstream request and forwards no browser header.
-Identity is minted from the validated session:
+A hard constraint declared `bypassable: false` blocks every decision above
+`reject`, for every actor, including one holding a valid human approval token.
+`blocking_hard_constraint` takes the override flag as an argument and ignores it
+for non-bypassable entries; there is a unit test that tries both values of the
+flag against both decisions above `reject` and asserts all four are blocked.
 
-```
-x-authenticated-user-id, x-authenticated-username,
-x-authenticated-roles, x-authenticated-email
-```
+The only way to reach a different outcome is to change `investor_profile.json`,
+which is a versioned file whose version is recorded on every history event. That
+is deliberate: changing the mandate should look like changing the mandate, not
+like clicking through a dialog.
 
-Values outside printable ASCII are percent-encoded rather than dropped. The
-previous helper silently omitted a header it could not encode, so a user whose
-Keycloak display name contained an accent reached the agent with identity
-headers missing — a security-relevant field disappearing with no error anywhere.
+## Prompt injection
 
-`x-authenticated-email` is redacted from telemetry; see
-[OBSERVABILITY.md](OBSERVABILITY.md).
+Issuer descriptions, imported notes and stored research notes are explicitly
+untrusted, and the boundary is structural rather than instructional:
 
-## Verifying it
+- untrusted text is returned inside `untrusted_free_text`, carrying a provenance
+  string that withdraws authority while explicitly permitting quoting and
+  summarising — a researcher has to be able to see what an issuer actually
+  claims;
+- the decision is computed in Rust from typed columns that no free-text field
+  feeds into;
+- the mutation tools are registered on the MCP but **not exposed to the model**,
+  which reaches them only through NAT approval functions that pause for a person.
 
-```
-make static-check     # offline: topology, source wiring, contracts
-make security-test    # + live: network isolation, auth boundaries, MCP keys
-make network-test     # runtime east-west reachability only
-```
+On that last point, the mechanism is worth naming because the logs are misleading.
+NAT's MCP client discovers and adds all nine tools to the function *group* — the
+startup log says so, once per tool — and then `include:` in `agent/config.yml`
+narrows what the workflow can actually access. `FunctionGroup.get_accessible_functions`
+returns only the included set when `include` is non-empty, so the ReAct agent is
+handed six read-only tools and has no binding for the other three. `GET /version`
+reports that list per run, `scripts/verify_security_sources.py` asserts the three
+mutations are absent from it, and every evaluation run records it as
+`tools_exposed` — a mutation tool appearing there would be a finding on its own.
 
-`make security-config-test` renders the Compose configuration with **every**
-profile enabled. Without that, `docker compose config` omits profile-gated
-services and the check silently skips them.
+An injection that fully captures the model therefore changes nothing. `make
+eval-injection` measures exactly that across five attack shapes, and treats
+*over*-blocking as a failure too: refusing to read a fund because its description
+is hostile denies the user a real fund.
 
-## Known limitations
+## Input screening
 
-See [LIMITATIONS.md](LIMITATIONS.md). Production hardening this template does
-not do is listed there rather than implied to be done.
+A NeMo Guardrails input rail classifies each user message before the agent sees
+it, using the `self_check_input` prompt in `agent/config.yml`. It answers Yes to
+requests to reveal prompts or credentials, replace governing instructions, bypass
+the rules engine or the approval step, forge an approval, **invoke privileged
+tools directly**, or facilitate market abuse.
+
+What it deliberately does *not* block is the bulk of the prompt: searching,
+comparing, asking why a fund scored what it did, proposing any decision, and
+explicitly asking for a human override with a rationale. Those stay allowed
+because they are the product, and because they remain constrained by deterministic
+policy and human approval underneath. Over-blocking is scored as a failure in the
+same metric as under-blocking — `make eval-guardrails` reports
+`guardrail_false_positive` and `guardrail_false_negative` separately, both at 0.0
+on the current model.
+
+The "invoke privileged tools directly" clause has a visible consequence worth
+knowing before demoing: phrasing a request as *"call commit_evaluation for
+VTI-ARCA"* is blocked, while *"please record a shortlist decision for VTI-ARCA"*
+is not. Both describe the same intent. The rail is classifying the *shape* of the
+request — an instruction to invoke a named privileged function reads as an attempt
+to drive the tool surface directly, which is what it is written to stop.
+
+**This rail is not the security boundary, and nothing depends on it being right.**
+It is a filter that reduces noise and blocks obvious abuse. Every control that
+matters sits below it: an injected instruction that gets past the rail still meets
+a decision computed in Rust from typed columns, mutation tools the model cannot
+reach, and an approval it cannot mint. The injection suite exists precisely to
+measure that — its attacks arrive in the *data plane*, where no input rail
+inspects them at all.
+
+## Output protection
+
+The output guardrail is intentionally narrow. Required evidence — ISINs, expense
+ratios, fund sizes, holdings counts, scores, decisions, dates — must remain
+visible, so generic NER masking is not enabled: it corrupts exactly the numbers a
+research decision rests on. The default rail performs deterministic credential
+and private-key leakage checks through NeMo's native streaming output path, with
+`stream_first: false`, so a credential cannot reach the client before the rail
+rejects it.
+
+## MCP Inspector
+
+MCP Inspector is a developer-only diagnostic client. It connects directly to the
+authenticated MCP endpoint inside the Compose network, bypassing NAT, the gateway
+and the UI so MCP tools and resources can be tested independently. Its web UI is
+published only on loopback (`127.0.0.1:6274`) and retains Inspector API-token
+authentication. It must not be exposed to an untrusted network.
+
+## History integrity
+
+Application code only inserts history events. PostgreSQL additionally has a
+`BEFORE UPDATE OR DELETE` trigger that rejects modification of `audit_events`.
+Each decision event records the rules version and the profile version in force, so
+a past decision can be reproduced after the policy changes. Production would also
+ship logs to immutable external or WORM retention with controlled break-glass
+access.
+
+An append-only log is only as trustworthy as the coherence of each row. The
+decision columns on an event describe **one** evaluation or none: an event that
+does not create a decision — an assignment — leaves them null and records the
+committed snapshot and the current evaluation as separate objects, each naming its
+own rules and profile version. Mixing a score earned under one policy with the
+version string of another produces a row that looks authoritative, reproduces
+nothing, and cannot be detected as wrong after the fact.
+
+## Telemetry
+
+Traces reach MLflow over standard OTLP through the OpenTelemetry Collector. Two
+controls keep credentials out of them:
+
+1. The NAT front-end worker strips `Authorization` from the ASGI scope after
+   validating it, before NAT can copy request attributes into span metadata.
+2. `SensitiveHeaderRedactionProcessor`, a NAT telemetry processor running ahead
+   of OTLP conversion, applies an explicit deny-list (`authorization`, `cookie`,
+   `set-cookie`, `x-api-key`, `api-key`, `x-auth-token`, `proxy-authorization`)
+   to every exported span. Correlation identifiers such as `x-request-id` and
+   `x-authenticated-user-id` are deliberately retained.
+
+A credential therefore has to defeat two independent controls to be exported.
+Trace content is bounded by `NAT_TRACE_CONTENT_MAX_CHARS` and marked with
+`nat.trace.content_truncated` when it is cut.
+
+Production deployments should additionally classify fields and disable or redact
+sensitive content according to data-retention policy; this project intentionally
+exposes enough trace content to make evaluation and reviewer inspection easy.
+
+## What this system cannot do
+
+Worth stating in a security document, because the absence is a control:
+
+- it has no brokerage credentials, no order model and no position table;
+- it cannot buy, sell, hold or rebalance anything;
+- it has no live market-data feed, so no external service can influence a
+  decision at request time;
+- the only writes it performs are to three columns of its own `etfs` table and to
+  its own append-only history.
+
+The blast radius of a total compromise of the model is a wrong sentence on a
+screen.

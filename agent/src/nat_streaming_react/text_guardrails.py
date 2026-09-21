@@ -271,72 +271,123 @@ def _critical_input_matches(text: str) -> list[str]:
     return [name for name, pattern in _CRITICAL_INPUT_PATTERNS if pattern.search(text)]
 
 
-_TICKET_ID_PATTERN = r"TKT-[A-Z0-9][A-Z0-9_-]*"
-_READ_ONLY_TICKET_TEMPLATES: tuple[tuple[str, re.Pattern[str]], ...] = (
+# A fund reference: an etf_id (VWCE-XETRA), a bare ticker (VWCE), or an ISIN
+# (IE00BK5BQT80). Deliberately permissive about which of the three it is — the
+# MCP server resolves the reference and reports an ambiguous ticker rather than
+# guessing, so this pattern only has to recognize the *shape* of one.
+_ETF_REF_PATTERN = r"[A-Z0-9][A-Z0-9]{1,14}(?:[.-][A-Z0-9]{1,10})*"
+
+#: Read-only requests this application considers unambiguously in-scope.
+#:
+#: The vocabulary is application-owned; the mechanism around it is not. Adapting
+#: this application to another domain means replacing these patterns and nothing
+#: else — see ``_read_only_lookup_allow_matches`` for the invariants they must
+#: hold to.
+_READ_ONLY_LOOKUP_TEMPLATES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
-        "list_open_tickets",
+        "list_research_universe",
         re.compile(
             r"^\s*(?:please\s+)?(?:show|list|display|get|retrieve)\s+"
-            r"(?:me\s+)?(?:all\s+)?(?:of\s+)?(?:my\s+)?open\s+(?:support\s+)?tickets?"
+            r"(?:me\s+)?(?:all\s+)?(?:of\s+)?(?:the\s+)?"
+            r"(?:etfs?|funds?|research\s+candidates?|shortlist(?:ed\s+(?:etfs?|funds?))?)"
             r"(?:\s+(?:with|including)\s+(?:their\s+)?"
-            r"(?:details?|status(?:es)?|priority|subjects?))?[.!?]?\s*$",
+            r"(?:details?|scores?|decisions?|review\s+states?))?[.!?]?\s*$",
             re.IGNORECASE,
         ),
     ),
     (
-        "list_open_ticket_history",
+        "rank_by_score",
         re.compile(
             r"^\s*(?:please\s+)?(?:show|list|display|get|retrieve)\s+"
-            r"(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:history|events?)\s+(?:for|from)\s+"
-            r"(?:all\s+)?(?:my\s+)?open\s+tickets?"
-            r"(?:\s+(?:with|including)\s+(?:their\s+)?details?)?[.!?]?\s*$",
+            r"(?:me\s+)?(?:the\s+)?"
+            # A count may sit on either side of the superlative: "the five
+            # highest-scoring funds" and "the top 10 funds" are one request.
+            r"(?:(?:\d{1,3}|ten|five|three)\s+)?"
+            r"(?:highest|best|top|lowest|worst)[-\s]?(?:scoring|ranked|rated)?\s+"
+            r"(?:(?:\d{1,3}|ten|five|three)\s+)?"
+            r"(?:[a-z]+\s+){0,3}(?:etfs?|funds?)"
+            r"(?:\s+candidates?)?"
+            r"(?:\s+(?:by|on)\s+(?:investment\s+)?score)?[.!?]?\s*$",
             re.IGNORECASE,
         ),
     ),
     (
-        "specific_ticket_direct",
+        "research_summary",
         re.compile(
-            rf"^\s*(?:please\s+)?(?:show|display|get|retrieve|summarize)\s+"
-            rf"(?:me\s+)?(?:ticket\s+)?{_TICKET_ID_PATTERN}"
+            r"^\s*(?:please\s+)?(?:show|give|display|get|retrieve)\s+"
+            r"(?:me\s+)?(?:an?\s+|the\s+)?"
+            r"(?:research\s+summary|summary|overview|breakdown)"
+            r"(?:\s+(?:of|for|across)\s+(?:the\s+)?"
+            r"(?:research\s+)?(?:universe|etfs?|funds?|candidates?))?[.!?]?\s*$",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "specific_etf_direct",
+        re.compile(
+            rf"^\s*(?:please\s+)?(?:show|display|get|retrieve|summarize|evaluate)\s+"
+            rf"(?:me\s+)?(?:etf\s+|fund\s+)?{_ETF_REF_PATTERN}"
             r"(?:\s*,?\s*(?:and\s+)?(?:"
             r"quote\s+its\s+(?:complete\s+|full\s+)?description\s+exactly"
             r"(?:\s*,?\s*including\s+every\s+key\s+and\s+value)?|"
-            r"including\s+(?:the\s+)?customer\s+and\s+assigned\s+agent|"
+            r"including\s+(?:the\s+)?(?:provenance|sources?|data\s+sources?)|"
             r"with\s+(?:all\s+)?(?:its\s+)?history))?[.!?]?\s*$",
             re.IGNORECASE,
         ),
     ),
     (
-        "specific_ticket_details",
+        "specific_etf_details",
         re.compile(
             rf"^\s*(?:please\s+)?(?:show|display|get|retrieve|summarize)\s+"
             r"(?:me\s+)?(?:the\s+)?(?:(?:complete|full)\s+)?"
-            r"(?:details?|information)(?:\s+and\s+(?:all\s+)?(?:its\s+)?history)?\s+"
-            rf"(?:for|of|from)\s+(?:ticket\s+)?{_TICKET_ID_PATTERN}"
+            r"(?:details?|information|metrics?|evaluation)"
+            r"(?:\s+and\s+(?:all\s+)?(?:its\s+)?history)?\s+"
+            rf"(?:for|of|from|on)\s+(?:etf\s+|fund\s+)?{_ETF_REF_PATTERN}"
             r"(?:\s*,?\s*(?:including|with)\s+(?:the\s+)?(?:"
-            r"customer\s+and\s+assigned\s+agent|customer|assigned\s+agent|"
+            r"provenance|sources?|data\s+sources?|score\s+components?|"
             r"(?:its\s+)?(?:all\s+)?history))?[.!?]?\s*$",
             re.IGNORECASE,
         ),
     ),
     (
-        "specific_ticket_history",
+        "specific_etf_history",
         re.compile(
             rf"^\s*(?:please\s+)?(?:show|list|display|get|retrieve)\s+"
-            r"(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:history|events?)\s+(?:for|of|from)\s+"
-            rf"(?:ticket\s+)?{_TICKET_ID_PATTERN}[.!?]?\s*$",
+            r"(?:me\s+)?(?:all\s+)?(?:the\s+)?"
+            r"(?:history|events?|decision\s+history|audit\s+(?:trail|history))\s+"
+            rf"(?:for|of|from)\s+(?:etf\s+|fund\s+)?{_ETF_REF_PATTERN}[.!?]?\s*$",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "explain_decision",
+        re.compile(
+            rf"^\s*(?:please\s+)?why\s+(?:is|was|did)\s+(?:etf\s+|fund\s+)?"
+            rf"{_ETF_REF_PATTERN}\s+"
+            r"(?:marked|scored|rated|classified|decided|get|receive)"
+            r"(?:\s+(?:as|at))?\s+"
+            r"(?:reject(?:ed)?|research|shortlist(?:ed)?|\d{1,3})"
+            r"(?:\s+(?:instead\s+of|rather\s+than|and\s+not)\s+"
+            r"(?:reject(?:ed)?|research|shortlist(?:ed)?))?[.!?]?\s*$",
             re.IGNORECASE,
         ),
     ),
 )
 
 
-def _read_only_ticket_allow_matches(text: str) -> list[str]:
-    """Recognize tightly scoped, read-only ticket lookup requests.
+def _read_only_lookup_allow_matches(text: str) -> list[str]:
+    """Recognize tightly scoped, read-only ETF lookup requests.
 
     Every pattern is anchored to the complete message. This prevents an attacker
     from appending an instruction override or harmful request to an otherwise
-    valid ticket query and then benefiting from the allow override.
+    valid research query and then benefiting from the allow override.
+
+    Two invariants any replacement vocabulary has to keep: the patterns are
+    matched with ``fullmatch`` against the whitespace-normalized message, and
+    none of them names a state-changing action. An allow rule that admitted
+    "shortlist VWCE" would let the override reach a mutation, which is the one
+    thing this layer must never do — it exists only to correct an over-eager
+    input rail on requests that read data.
     """
 
     if not _env_bool("GUARDRAILS_INPUT_READ_ONLY_ALLOW_OVERRIDE", True):
@@ -348,7 +399,7 @@ def _read_only_ticket_allow_matches(text: str) -> list[str]:
 
     return [
         name
-        for name, pattern in _READ_ONLY_TICKET_TEMPLATES
+        for name, pattern in _READ_ONLY_LOOKUP_TEMPLATES
         if pattern.fullmatch(normalized)
     ]
 
@@ -722,7 +773,7 @@ class TextGuardrailsMiddleware(GuardrailsMiddleware):
         deterministic_matches = _critical_input_matches(text) + [
             f"history:{name}" for name in _critical_input_matches(_prior_turn_text(value))
         ]
-        deterministic_allow_matches = _read_only_ticket_allow_matches(text)
+        deterministic_allow_matches = _read_only_lookup_allow_matches(text)
 
         with tracer.start_as_current_span("guardrail.input.self_check") as span:
             _set_common_guardrail_attributes(
@@ -796,7 +847,7 @@ class TextGuardrailsMiddleware(GuardrailsMiddleware):
 
                 # Decision precedence is intentionally asymmetric:
                 # 1. Deterministic critical blocks always win.
-                # 2. A narrow read-only ticket allow rule can correct an LLM
+                # 2. A narrow read-only lookup allow rule can correct an LLM
                 #    false positive, but only when no critical block matched.
                 # 3. All other inputs follow the LLM self-check verdict.
                 deterministic_blocked = bool(deterministic_matches)
@@ -1267,7 +1318,7 @@ class TextGuardrailsMiddleware(GuardrailsMiddleware):
             )
 
         try:
-            with tracer.start_as_current_span("guardrail.output.regex_presidio") as span:
+            with tracer.start_as_current_span("guardrail.output.regex") as span:
                 _set_common_guardrail_attributes(
                     span,
                     stage="output",
@@ -1379,7 +1430,7 @@ class TextGuardrailsMiddleware(GuardrailsMiddleware):
                     span.set_attribute("output.mime_type", "application/json")
 
                     _emit_nat_evaluation_event(
-                        "guardrail_output_regex_presidio_decision",
+                        "guardrail_output_regex_decision",
                         {
                             "raw_output_sha256": _sha256(raw_text),
                             "raw_output_length": len(raw_text),
@@ -1526,7 +1577,7 @@ class TextGuardrailsMiddleware(GuardrailsMiddleware):
         blocked = False
 
         try:
-            with tracer.start_as_current_span("guardrail.output.regex_presidio") as span:
+            with tracer.start_as_current_span("guardrail.output.regex") as span:
                 _set_common_guardrail_attributes(
                     span,
                     stage="output",
@@ -1609,7 +1660,7 @@ class TextGuardrailsMiddleware(GuardrailsMiddleware):
                     span.set_attribute("output.mime_type", "application/json")
 
                     _emit_nat_evaluation_event(
-                        "guardrail_output_regex_presidio_decision",
+                        "guardrail_output_regex_decision",
                         {
                             "raw_output_sha256": _sha256(raw_text),
                             "raw_output_length": len(raw_text),

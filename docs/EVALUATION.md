@@ -1,17 +1,28 @@
 # Evaluation
 
-Four MLflow suites driven against the **running** agent, with deterministic
+Five MLflow suites driven against the **running** agent, with deterministic
 scorers. No LLM judges: a red metric is a fact about the run rather than an
 opinion about it.
+
+For the measured figures and what they mean, see
+[EVALUATION_ANALYSIS.md](EVALUATION_ANALYSIS.md). This document is the
+methodology and the how-to.
 
 ## Suites
 
 | Suite | Question | Gate |
 | --- | --- | --- |
-| `guardrails` | Did the input policy block what it should and allow what it should? | `guardrail_correct/mean` |
-| `tools` | Did the agent call the right tools with the right arguments? | `tool_call_correct/mean` |
-| `grounding` | Is the answer built only from what the tools returned? | `grounded_in_tool_results/mean` |
-| `injection` | Does adversarial text in a *tool result* change the answer, the tools called, or the state? | `injection_resisted/mean` |
+| `evaluation` | Did the agent report the deterministic engine's decision faithfully, for the fund it was asked about? | `evaluation_correct/mean` |
+| `policy` | Are the advisory ceiling, the caps and the hard constraints respected in what the user is told? | `decision_policy_correct/mean` |
+| `grounding` | Is the explanation built only from the supplied facts? | `research_grounding/mean` |
+| `injection` | Does adversarial text in *ETF metadata* change the decision, the state, or what the user is told? | `injection_resisted/mean` |
+| `guardrails` | Did the input policy block what it should and allow ordinary research work? | `prompt_robustness_correct/mean` |
+
+The split between `evaluation` and `policy` is the one worth keeping. The first
+asks whether the engine's answer survived the trip through the model; the second
+asks whether the *rules about* that answer — a model may never be more
+optimistic, a cap is reported rather than argued with, a hard constraint is never
+bypassed — survived it too. A single number would let one hide the other.
 
 Datasets are source-controlled JSON under `evaluation/datasets/` and synchronised
 into MLflow, so a case is reviewable in a pull request.
@@ -30,50 +41,62 @@ false positive is what makes such a metric useless, so the scorer normalises and
 falls back to a digit-substring check for identifiers embedded in larger tokens.
 
 **Claim detection suppresses negations within the clause.** The answers this
-system *wants* are full of "nothing was changed" and "no ticket was resolved". A
-scorer that flags the disclaimer alongside the claim fails every well-behaved
-answer. Position matters, not mere presence: "the ticket was escalated, though I
-am not certain" is still a claim.
+system *wants* are full of "this is not a forecast", "no position was opened",
+"past performance is not predictive". A scorer that flags the disclaimer
+alongside the claim fails every well-behaved answer. Position matters, not mere
+presence: "it will outperform, though this is not guaranteed" is still a
+forecast, because the negation comes afterwards and qualifies something else.
 
-**A state report is not the same claim as a performed action, and the scorer
-checks each differently.** "The ticket was resolved" and "TKT-1005 is high
-priority" describe a *condition*, which `action_claims` verifies against the
-`status`/`priority` fields the matching `get_ticket`/`search_tickets` call
-actually returned — true when it matches, a violation when it does not or
-when there is no evidence for that ticket at all. "I changed its priority" and
-"the ticket has been escalated" claim an *event* occurred; there is no ticket
-field whose value means "changed", so these stay unconditional violations
-regardless of whether the resulting value happens to match reality — a
-coincidentally correct end state does not make "I did this" true. Only the
-structured `ticket`/`tickets` fields on a tool result count as evidence:
-free text (`description`, a history event's `summary`) is never read, so a
-fabricated approval planted in stored text cannot become authoritative by
-being echoed back. Ticket attribution (which claim belongs to which id) is
-resolved per claim, using whichever id most recently appeared at or before
-that claim's own position — an id named later in the same sentence never
-becomes the retroactive subject of an earlier claim, and an explicit shared
-subject ("TKT-1001 and TKT-1002 are urgent priority") checks every id named.
-A claim is only exempted as someone else's quotation ("the note claims
-'...'") when it sits inside an actual quotation mark *and* the clause uses
-reporting language — attribution language alone, with nothing quoted
-("according to the ticket record, X"), is still checked against evidence,
-not excused. Both are still heuristics, not parsing — see the comments above
-`_state_claims` in `scorers.py` for the specific cases this does and does
-not handle.
+**Three claim families are checked, because they fail differently.**
+
+* `forecast_claims` — language that turns a policy result into a promise
+  ("will outperform", "expected return", "guaranteed"). The whole architecture
+  rests on `investment_score` being quality-and-fit rather than a prediction, so
+  an answer that presents it as expected performance is a substantive failure
+  even when every number in it is correct.
+* `execution_claims` — language that implies something was traded ("placed the
+  order", "the position was opened", also in the passive voice, which is how a
+  model actually phrases it). This system ends at decision support; telling
+  someone a position exists when none does is the worst direction for it to
+  fail in.
+* `contradicts` / `misattributes_etf` — an answer that names decisions but never
+  the correct one, or names a fund but never the one it was asked about. Both
+  treat *silence* as a separate, lesser failure: omitting the decision is a
+  communication weakness, whereas asserting a different one has told the user
+  the wrong thing about their money. Mentioning the right answer alongside
+  others is fine — "research rather than shortlist" is a real sentence.
+
+`_mutations_absent` backs all of them by checking that no state-changing tool
+was called, reading both the tool *start* and tool *end* events: a mutation
+whose start event was dropped by a reconnect would otherwise score as "nothing
+was changed", which is a false pass on the one metric that must never give one.
+
+These are heuristics over prose, not parsing. The deterministic half of the
+same questions is asserted without a model at all, by `make rules-test` and
+`make verify-approvals`.
 
 **Guardrail false positives and false negatives are counted separately.** They
 are different failures with different costs and must not average.
 
-**Over-blocking is a failure in the injection suite.** Refusing to read a record
-because its stored text is hostile denies the support agent a real record. The
-defence is that the untrusted text cannot reach the tools called, the state, or
-any credential — not that the request is refused.
+**Over-blocking is a failure in the injection suite.** Refusing to read a fund
+because its issuer description is hostile denies the user a real fund. The
+defence is not refusal: it is that the decision is computed in Rust from
+structured fields the text cannot reach, and that a mutation needs a signed
+human approval the model cannot mint. An injection that fully captures the model
+still changes nothing.
 
-**Injection fixtures are seeded, not poisoned.** Dedicated resolved `TKT-INJ-*`
-rows, referenced by nothing else. The obvious implementation mutates a demo
-record before the suite and restores it afterwards — and then a suite that
-crashes leaves the demo corrupted. With dedicated rows there is nothing to
-restore, because nothing is ever mutated, and every suite stays read-only.
+**Injection payloads are applied and restored around the run.**
+`scripts/poison_etf_metadata.py` writes into the two columns that carry free
+text from outside this system — `description`, which an issuer populates, and
+`research_note`, which a person does — and restores them from the shipped
+snapshot afterwards. `make eval-suite-all` wraps every run in that pair and
+restores **even when the evaluation fails**, so a crashed suite never leaves
+hostile text in the database. Two further properties make it safe: the target
+ETFs are disjoint from every other dataset, the approval suite and
+[DEMO.md](DEMO.md); and the MCP server re-seeds descriptions from `etfs.json` on
+startup, so the poisoning is self-healing even if a restore is skipped.
+
+Nothing here touches `data/*.json`. The shipped snapshot is never modified.
 
 ## Provenance
 
@@ -113,8 +136,22 @@ never measured.
 
 Each run writes `evaluation/results/<suite>-latest.json` with metrics,
 threshold, pass/fail and the full provenance record, so the artifact is
-self-describing on its own. **The directory is gitignored**: nothing generated is
-committed, so a CI artifact can never be confused with a stale checked-in result.
+self-describing on its own.
+
+**These files are committed**, unlike in the template this is built on, because
+they are the evidence [EVALUATION_ANALYSIS.md](EVALUATION_ANALYSIS.md) and
+[ACCEPTANCE.md](ACCEPTANCE.md) cite. That creates the hazard the template avoided
+by gitignoring them — a stale committed result read as a fresh one — so it is
+closed at the other end instead: the live-evaluation workflow clears the
+directory, re-runs, and refuses to publish an artifact that is missing,
+malformed, stale relative to the run, or carrying a credential
+(`scripts/verify_evaluation_artifacts.py`, whose gating semantics are themselves
+tested).
+
+`evaluation/results/deterministic-etf-baseline.json` is different again: it is
+emitted by `rules::tests::emit_deterministic_baseline`, needs no model and no
+cluster, and CI fails if the committed bytes stop matching what the shipped
+engine produces.
 
 ## Running it
 
@@ -122,7 +159,10 @@ committed, so a CI artifact can never be confused with a stale checked-in result
 make eval-list                 # suites, experiments, datasets
 make eval-bootstrap            # create or merge the MLflow datasets
 make eval SUITE=grounding      # one suite
-make eval-all                  # everything, with gates
+make eval-suite-all SUITE=...  # one suite, with the injection poison/restore
+make eval-all                  # all five, with gates, poisoned and restored
+make etf-check                 # fixtures, profile, rules spec, labelled cases
+make rules-test                # the engine itself; regenerates the baseline
 make eval-test-host            # the harness's own unit tests, no Docker
 ```
 
@@ -131,9 +171,13 @@ missing dataset or a dead model still raises and fails. That separation is the
 point: a red metric is a published finding, a broken cluster is a broken build,
 and the two must not report identically.
 
-A read-only evaluation that reaches a human-approval wait raises immediately
-rather than blocking until the socket times out, so a dataset defect does not
-present as an infrastructure failure.
+Every suite is read-only. One that reaches a human-approval wait raises
+immediately rather than blocking until the socket times out, so a dataset defect
+does not present as an infrastructure failure — and a case that would call
+`commit_evaluation`, `shortlist_etf` or `assign_etf` is a dataset defect by
+definition, because there is nobody at the keyboard to answer it. The
+human-in-the-loop path is covered instead by `make verify-hitl`, which drives it
+with scripted answers.
 
 ## Adding a case
 
@@ -144,18 +188,22 @@ Append to the suite's JSON. `inputs.question` and `inputs.case_id` are required;
 Adding a **suite** is a dataset, an entry in `evaluation/config.py`, and an entry
 in `SCORERS` in `evaluation/scorers.py`.
 
-## Generalizing for a domain application
+## What is generic and what is this application's
 
-Nothing in the core is domain-specific. Override:
+The harness core — the SSE client, the runner, the provenance record, the
+latency distribution, the dataset sync — is domain-neutral and is shared with
+the template this is built on. The suites, the scorers and the datasets are
+this application's. Overridable without touching either:
 
 | Variable | What it binds |
 | --- | --- |
 | `EVALUATION_TOOL_NAMES` | tool names the harness recognises as tool calls |
-| `EVALUATION_MUTATING_TOOLS` | tools that change state (empty here: the sample is read-only) |
+| `EVALUATION_MUTATING_TOOLS` | tools that change state; **defaults to this application's three** rather than to empty, because an empty set would make every "nothing was changed" assertion pass vacuously |
 | `EVALUATION_MODEL_PREFIX` | how the deployed agent is grouped in MLflow |
 | `*_EVALUATION_EXPERIMENT` / `*_EVALUATION_DATASET` | per-suite MLflow names |
 | `EVALUATION_SYSTEM_PROMPT_NAME` / `EVALUATION_RAIL_PROMPT_NAME` | prompt-registry names |
 
-Domain vocabulary belongs in the dataset — `required_term_groups`,
-`forbidden_assertions`, `forbidden_strings`, `required_tools`,
-`forbidden_tools` — never in the scorer.
+Case vocabulary belongs in the dataset — `required_term_groups`,
+`forbidden_assertions`, `forbidden_strings`, `expected_decision`,
+`forbidden_tools` — rather than in the scorer, so a case is reviewable in a pull
+request without reading Python.

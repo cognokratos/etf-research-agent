@@ -1,3 +1,1 @@
-"""Live MLflow evaluation harness for the guarded support-tickets agent."""
-
-__all__ = []
+"""Live MLflow evaluation harness for the guarded ETF research agent."""

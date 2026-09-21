@@ -240,10 +240,10 @@ mod tests {
     fn identity(id: &str) -> UserIdentity {
         UserIdentity {
             id: id.into(),
-            username: "analyst".into(),
+            username: "researcher".into(),
             email: None,
             name: None,
-            roles: vec!["analyst".into()],
+            roles: vec!["researcher".into()],
         }
     }
 
@@ -380,7 +380,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert(
             axum::http::header::COOKIE,
-            format!("tickets_gateway_csrf={cookie}").parse().expect("valid"),
+            format!("etf_research_gateway_csrf={cookie}").parse().expect("valid"),
         );
         headers.insert("x-csrf-token", header.parse().expect("valid"));
         headers

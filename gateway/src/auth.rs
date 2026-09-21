@@ -407,8 +407,8 @@ mod tests {
     #[test]
     fn same_origin_destinations_are_preserved() {
         assert_eq!(
-            safe_return_to(Some("http://localhost:3000/tickets/TKT-1001"), UI),
-            "http://localhost:3000/tickets/TKT-1001"
+            safe_return_to(Some("http://localhost:3000/etfs/VWCE-XETRA"), UI),
+            "http://localhost:3000/etfs/VWCE-XETRA"
         );
     }
 
@@ -417,10 +417,10 @@ mod tests {
     #[test]
     fn relative_destinations_resolve_against_the_ui_origin() {
         assert_eq!(
-            safe_return_to(Some("/tickets/TKT-1001?tab=audit"), UI),
-            "http://localhost:3000/tickets/TKT-1001?tab=audit"
+            safe_return_to(Some("/etfs/VWCE-XETRA?tab=audit"), UI),
+            "http://localhost:3000/etfs/VWCE-XETRA?tab=audit"
         );
-        assert_eq!(safe_return_to(Some("tickets"), UI), "http://localhost:3000/tickets");
+        assert_eq!(safe_return_to(Some("etfs"), UI), "http://localhost:3000/etfs");
     }
 
     #[test]
@@ -460,9 +460,9 @@ mod tests {
         }
         assert_eq!(store.len().await, 8, "capacity must still be enforced");
 
-        store.insert("analyst".into(), pending("analyst")).await;
-        let login = store.take("analyst").await.expect("the real login must survive");
-        assert_eq!(login.state, "analyst");
+        store.insert("researcher".into(), pending("researcher")).await;
+        let login = store.take("researcher").await.expect("the real login must survive");
+        assert_eq!(login.state, "researcher");
     }
 
     #[tokio::test]

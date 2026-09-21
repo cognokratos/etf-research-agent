@@ -12,7 +12,10 @@ nvidia-nat-security[guardrails]==1.8.0
 
 # MCP client integration used to discover the Rust server's tools.
 nvidia-nat-mcp==1.8.0
-# Local Presidio analyzer/anonymizer dependencies used by the deterministic
-# output masking rail. The sdd extra matches NeMo Guardrails 0.21.0.
-nemoguardrails[sdd,tracing]==0.21.0
+# Guardrails tracing plus deterministic regex output protection. The `sdd`
+# (Presidio) extra is intentionally NOT installed: generic NER masking corrupts
+# the exact structured evidence a research decision rests on -- ISINs read as
+# IBAN_CODE, and expense ratios, fund sizes and scores are the answer rather
+# than incidental PII. See the rails block in agent/config.yml.
+nemoguardrails[tracing]==0.21.0
 

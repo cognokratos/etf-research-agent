@@ -1,4 +1,4 @@
-"""Regression checks for the streamed ticket-triage output guardrails.
+"""Regression checks for the streamed ETF-research output guardrails.
 
 Covers both configured output rails and what each one can actually do:
 
@@ -45,16 +45,17 @@ from nat_streaming_react.text_guardrails import TextGuardrailsMiddleware
 CONFIG_PATH = Path(__file__).with_name("config.yml")
 
 # Exactly the shape of a real answer. Every field must survive the output rails:
-# ticket ids, event ids and amounts are the evidence a triage decision rests
-# on, and a rail that eats them makes the system useless while looking like it
-# is working.
-TICKET_OUTPUT = """\
-1. **TKT-1004** — Duplicate charge
-   - **Status:** open
-   - **Priority:** high
-   - **History events:** 3, totalling $172.80
-   - **Largest:** EVT-1301 at $86.40 on 2026-09-16
-   - **Escalated:** true
+# the etf_id, the ISIN, the score and every metric are the evidence a research
+# decision rests on, and a rail that eats them makes the system useless while
+# looking like it is working. This is also why the Presidio masking flow is not
+# enabled here -- an ISIN is close enough to an IBAN to be masked as one.
+ETF_OUTPUT = """\
+1. **VWCE-XETRA** — Vanguard FTSE All-World UCITS ETF
+   - **ISIN:** IE00BK5BQT80
+   - **Deterministic decision:** research (investment_score 68)
+   - **TER:** 0.22% · **Fund size:** EUR 4,250m · **Tracking difference:** 0.08%
+   - **Distribution:** accumulating · **UCITS:** true
+   - **Data as of:** 2026-06-30
 """
 
 # The PII the masking rail is configured to remove. Deliberately includes the
@@ -133,19 +134,22 @@ def check_configuration() -> list[re.Pattern[str]]:
     if masking_flow:
         entities = rails_config["sensitive_data_detection"]["output"]["entities"]
         assert entities, "masking is enabled with an empty entity list"
-        # PERSON and ORGANIZATION are deliberately absent: names are part of the
-        # ticket-triage workflow, and masking them would destroy the answer.
+        # PERSON and ORGANIZATION must stay absent: issuer and index names are
+        # part of every answer, and masking them would destroy it.
         assert "PERSON" not in entities and "ORGANIZATION" not in entities, entities
         print(f"PASS: PII masking retained for {len(entities)} entity types")
     else:
-        print("NOTE: PII masking is disabled in this configuration")
+        print(
+            "NOTE: PII masking is disabled in this configuration, deliberately -- "
+            "see the rails block in config.yml"
+        )
 
     patterns = rails_config["regex_detection"]["output"]["patterns"]
     compiled = [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
 
-    triggered = [p.pattern for p in compiled if p.search(TICKET_OUTPUT)]
-    assert not triggered, f"ordinary ticket evidence triggers the secret rail: {triggered}"
-    print("PASS: structured ticket evidence does not trigger output secret patterns")
+    triggered = [p.pattern for p in compiled if p.search(ETF_OUTPUT)]
+    assert not triggered, f"ordinary ETF evidence triggers the secret rail: {triggered}"
+    print("PASS: structured ETF evidence does not trigger output secret patterns")
 
     for secret in SECRET_CASES:
         assert any(pattern.search(secret) for pattern in compiled), secret
@@ -205,6 +209,48 @@ def check_middleware_wiring() -> None:
     print("PASS: buffered PII masking runs the blocking-capable rail on an isolated instance")
 
 
+def masking_flow_enabled() -> bool:
+    """Whether the *deployed* configuration actually enables PII masking.
+
+    `guardrails_compat.masking_is_available()` answers a different question --
+    whether the Presidio masking *action* can be imported -- and it is true even
+    when Presidio's own backend is absent, because the action module imports
+    cleanly and pulls Presidio in lazily. It is the right guard for deciding
+    whether to register the compatibility shim, and the wrong one for deciding
+    whether to assert masking behaviour.
+
+    The checks below drive the real middleware against the real deployed rails
+    config. If that config does not enable `mask sensitive data on output`, there
+    is nothing for them to prove: the middleware correctly takes the native
+    streaming path and nothing masks. Asserting masking anyway fails on a
+    correct configuration, which is how this application -- which deliberately
+    ships masking off, see the rails block in config.yml -- first surfaced the
+    mismatch.
+
+    Both conditions are required, and each is insufficient alone.
+    """
+
+    config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    flows = config["middleware"]["workflow_guardrails"]["guardrails"]["rails"]["output"]["flows"]
+    return "mask sensitive data on output" in flows
+
+
+def masking_is_exercisable() -> tuple[bool, str]:
+    """`(exercisable, reason)` for the masking behaviour checks."""
+
+    if not masking_flow_enabled():
+        return False, (
+            "the deployed configuration does not enable `mask sensitive data on "
+            "output` (deliberate in this application); masking behaviour not exercised"
+        )
+    if not masking_is_available():
+        return False, (
+            "the masking flow is configured but Presidio is not installed; "
+            "install nemoguardrails[sdd] and the spaCy model"
+        )
+    return True, ""
+
+
 async def check_masking_applies() -> None:
     """Prove the underlying masking action actually masks.
 
@@ -220,8 +266,9 @@ async def check_masking_applies() -> None:
     does not require constructing a whole middleware instance to prove.
     """
 
-    if not masking_is_available():
-        print("SKIP: Presidio masking not installed; masking behaviour not exercised")
+    exercisable, reason = masking_is_exercisable()
+    if not exercisable:
+        print(f"SKIP: {reason}")
         return
 
     # Loading Presidio's analyzer pulls spaCy's en_core_web_lg into memory —
@@ -289,12 +336,12 @@ async def check_masking_applies() -> None:
     )
 
     # And masking must not destroy the evidence the answer is made of.
-    unmasked = await mask(TICKET_OUTPUT)
-    for fragment in ("TKT-1004", "EVT-1301", "172.80", "86.40", "2026-09-16", "true"):
+    unmasked = await mask(ETF_OUTPUT)
+    for fragment in ("VWCE-XETRA", "IE00BK5BQT80", "68", "0.22", "4,250m", "2026-06-30", "true"):
         assert fragment in unmasked, (
             f"masking removed structured evidence {fragment!r}: {unmasked}"
         )
-    print("PASS: PII masking preserves ticket identifiers, amounts and booleans")
+    print("PASS: PII masking preserves fund identifiers, metrics and booleans")
 
 
 def _build_middleware(verdict: str = "No", *, output_flows: list[str] | None = None):
@@ -387,8 +434,9 @@ async def check_streaming_pii_protection() -> None:
     middleware pipeline calls — rather than the masking action in isolation.
     """
 
-    if not masking_is_available():
-        print("SKIP: Presidio masking not installed; streaming PII protection not exercised")
+    exercisable, reason = masking_is_exercisable()
+    if not exercisable:
+        print(f"SKIP: {reason}")
         return
     print("NOTE: loading the Presidio analyzer (~600MB); exit 137 here means the "
           "container ran out of memory, not that a check failed")
@@ -401,7 +449,7 @@ async def check_streaming_pii_protection() -> None:
         ("adversarially split", _tokenize(PII_OUTPUT)),
     ):
         middleware = _build_middleware()
-        ctx = _invocation_context(("Who's the contact for TKT-1004?",))
+        ctx = _invocation_context(("Who is the contact for VWCE-XETRA?",))
         released, yield_count = await _drain(middleware, ctx, lambda *_a, **_k: _chunks(parts))
         for secret in MASKED_PII:
             assert secret not in released, f"{description}: {secret!r} leaked: {released}"
@@ -440,10 +488,10 @@ async def check_streaming_pii_protection() -> None:
     # 4. Benign structured output survives buffered masking intact.
     middleware = _build_middleware()
     ctx = _invocation_context(("q",))
-    released, _ = await _drain(middleware, ctx, lambda *_a, **_k: _chunks(_tokenize(TICKET_OUTPUT)))
-    for fragment in ("TKT-1004", "EVT-1301", "172.80", "86.40", "2026-09-16", "true"):
+    released, _ = await _drain(middleware, ctx, lambda *_a, **_k: _chunks(_tokenize(ETF_OUTPUT)))
+    for fragment in ("VWCE-XETRA", "IE00BK5BQT80", "68", "0.22", "4,250m", "2026-06-30", "true"):
         assert fragment in released, f"{fragment!r} lost to buffered masking: {released}"
-    print("PASS: benign structured ticket evidence survives buffered PII masking intact")
+    print("PASS: benign structured ETF evidence survives buffered PII masking intact")
 
     # 5. Concurrent benign and sensitive streamed responses stay isolated at
     #    the *middleware-instance* boundary: two independent middleware
@@ -465,7 +513,7 @@ async def check_streaming_pii_protection() -> None:
         _drain(
             benign_middleware,
             _invocation_context(("q",)),
-            lambda *_a, **_k: drip(_tokenize(TICKET_OUTPUT), 0.001),
+            lambda *_a, **_k: drip(_tokenize(ETF_OUTPUT), 0.001),
         ),
         _drain(
             sensitive_middleware,
@@ -473,7 +521,7 @@ async def check_streaming_pii_protection() -> None:
             lambda *_a, **_k: drip(_tokenize(PII_OUTPUT), 0.0015),
         ),
     )
-    for fragment in ("TKT-1004", "172.80"):
+    for fragment in ("VWCE-XETRA", "0.22"):
         assert fragment in released_benign, released_benign
     for secret in MASKED_PII:
         assert secret not in released_benign, f"the sensitive stream leaked into the benign one: {released_benign}"
@@ -594,8 +642,13 @@ async def check_shared_middleware_pool_concurrency() -> None:
     middleware. Two concurrent requests then lease from that single pool.
     """
 
-    if not masking_is_available():
-        print("SKIP: Presidio masking not installed; shared-pool concurrency not exercised")
+    exercisable, reason = masking_is_exercisable()
+    if not exercisable:
+        # The pool itself is exercised without masking by
+        # `verify_guardrails_rails.py`, which drives the same RailsPool through
+        # the regex rail. What is skipped here is only the masking-specific
+        # concurrency case.
+        print(f"SKIP: {reason}")
         return
 
     middleware = _build_middleware()
@@ -621,7 +674,7 @@ async def check_shared_middleware_pool_concurrency() -> None:
         _drain(
             middleware,
             _invocation_context(("q",)),
-            lambda *_a, **_k: drip(_tokenize(TICKET_OUTPUT), 0.001),
+            lambda *_a, **_k: drip(_tokenize(ETF_OUTPUT), 0.001),
         ),
         _drain(
             middleware,
@@ -632,7 +685,7 @@ async def check_shared_middleware_pool_concurrency() -> None:
     released_benign_text, _ = released_benign
     released_sensitive_text, _ = released_sensitive
 
-    for fragment in ("TKT-1004", "172.80"):
+    for fragment in ("VWCE-XETRA", "0.22"):
         assert fragment in released_benign_text, released_benign_text
     for secret in MASKED_PII:
         assert secret not in released_benign_text, (
@@ -668,7 +721,7 @@ async def check_shared_middleware_pool_concurrency() -> None:
         return leased_instance_id, response
 
     (benign_instance_id, benign_response), (secret_instance_id, secret_response) = await asyncio.gather(
-        evaluate_via_pool(TICKET_OUTPUT, 0.05),
+        evaluate_via_pool(ETF_OUTPUT, 0.05),
         evaluate_via_pool(LEAKED_SECRET, 0.05),
     )
     # The direct, unambiguous proof: while both leases were open at once

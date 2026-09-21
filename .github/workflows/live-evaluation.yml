@@ -31,7 +31,7 @@ on:
         required: true
         default: "all"
         type: choice
-        options: [all, guardrails, tools, grounding, injection]
+        options: [all, evaluation, policy, grounding, injection, guardrails]
 
 permissions:
   contents: read
@@ -109,10 +109,15 @@ jobs:
       # separation is the whole reason the flag exists — a red metric is a
       # published finding, a broken cluster is a broken build, and the two must
       # not report identically.
+      # `eval-suite-all`, not `eval`: the injection suite reads deliberately
+      # poisoned issuer descriptions and research notes, and this target
+      # applies the poison and restores it around the run -- including when the
+      # run fails, so a crashed evaluation never leaves hostile text in the
+      # database. It honours SUITE, so a single-suite run takes the same path.
       - name: Run the suites
         env:
           SUITE_INPUT: ${{ inputs.suite }}
-        run: make eval SUITE="$SUITE_INPUT" ALLOW_FAILURES=1
+        run: make eval-suite-all SUITE="$SUITE_INPUT" ALLOW_FAILURES=1
 
       # The single gate that decides whether anything gets published. Runs on
       # `always()` so a crash in "Run the suites" (an infra failure — a metric

@@ -34,10 +34,13 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
 # See guardrails_compat's module docstring for the conditions under which the
 # compatibility layer can be deleted.
 
-# Presidio uses spaCy for entity recognition. Install the English model in the
-# builder so it is copied into the runtime virtual environment.
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    python -m spacy download en_core_web_lg
+# No spaCy model is installed. The template this image is built from downloads
+# en_core_web_lg for Presidio's entity recognition, but this application does
+# not enable the PII-masking rail -- generic NER masking corrupts the exact
+# structured evidence an ETF decision rests on -- so `nemoguardrails` is
+# installed without the `sdd` extra and the model would be dead weight in the
+# image. Re-add both together if you ever enable masking; see requirements.txt
+# and the rails block in config.yml.
 
 COPY pyproject.toml /app/pyproject.toml
 COPY src /app/src
@@ -62,6 +65,7 @@ COPY verify_trace_pipeline.py /app/verify_trace_pipeline.py
 COPY verify_mcp_auth.py /app/verify_mcp_auth.py
 COPY verify_approval_tokens.py /app/verify_approval_tokens.py
 COPY verify_llm_config.py /app/verify_llm_config.py
+COPY verify_hitl_override.py /app/verify_hitl_override.py
 
 # Stamped last on purpose. A new commit must not invalidate the dependency and
 # source layers above it, so a provenance-only rebuild stays cheap.

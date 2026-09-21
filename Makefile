@@ -51,8 +51,14 @@ OPEN ?= open
 LLM_MODEL ?= qwen3:8b
 LLM_GUARD_MODEL ?= $(LLM_MODEL)
 LLM_BASE_URL ?= http://host.docker.internal:11434/v1
-POSTGRES_USER ?= tickets
-POSTGRES_DB ?= tickets
+POSTGRES_USER ?= etf_research
+POSTGRES_DB ?= etf_research
+
+# The ETFs the approval-boundary and HITL suites reset before running.
+# Deliberately disjoint from every evaluation dataset and from docs/DEMO.md,
+# so a verification run never perturbs a measured or demonstrated result.
+APPROVAL_TEST_ETFS := 'VJPN-LSE','IH2O-LSE','XNIF-XETRA','QQQ-NASDAQ','VHYL-LSE','EQQQ-LSE','CW8-EPA','VFEM-LSE','VWRL-LSE','IUSN-XETRA'
+HITL_TEST_ETF := 'ESPO-XETRA'
 # Host-side MLflow port. Overridable because 5000 collides with macOS AirPlay
 # Receiver and with any other MLflow on the machine; the container port is fixed.
 MLFLOW_PORT ?= 5000
@@ -99,8 +105,9 @@ endif
 	shell-agent shell-db open-ui open-gateway open-keycloak open-agent \
 	open-mlflow open-all login-info security-config-test auth-test security-test reset-auth reset-data \
 	eval-list eval-bootstrap eval-bootstrap-replace eval-bootstrap-guardrails \
-	eval-bootstrap-tools eval-bootstrap-grounding eval-bootstrap-injection \
-	eval eval-guardrails eval-tools eval-grounding eval-injection eval-all \
+	eval-bootstrap-etf eval-bootstrap-policy eval-bootstrap-grounding eval-bootstrap-injection \
+	eval eval-guardrails eval-etf eval-policy eval-grounding eval-injection eval-all \
+	eval-suite-all etf-check rules-test diagrams verify-hitl verify-hitl-audit \
 	eval-all-allow-failures eval-test test
 
 help: ## Show all available targets
@@ -193,7 +200,7 @@ wait: ## Wait for UI, gateway, Keycloak, MLflow, and Collector readiness
 	until \
 		curl -fsS http://localhost:$(UI_PORT)/ >/dev/null 2>&1 && \
 		$(COMPOSE) exec -T gateway curl -fsS http://127.0.0.1:8081/ready >/dev/null 2>&1 && \
-		curl -fsS http://localhost:$(KEYCLOAK_PORT)/realms/$${KEYCLOAK_REALM:-tickets}/.well-known/openid-configuration >/dev/null 2>&1 && \
+		curl -fsS http://localhost:$(KEYCLOAK_PORT)/realms/$${KEYCLOAK_REALM:-etf-research}/.well-known/openid-configuration >/dev/null 2>&1 && \
 		curl -fsS http://localhost:$(MLFLOW_PORT)/health >/dev/null 2>&1 && \
 		curl -fsS http://localhost:13133/ >/dev/null 2>&1; \
 	do \
@@ -211,7 +218,7 @@ wait: ## Wait for UI, gateway, Keycloak, MLflow, and Collector readiness
 health: ## Check all public endpoints and internal service health
 	@curl -fsS http://localhost:$(UI_PORT)/ >/dev/null && echo "OK  assistant-ui   http://localhost:$(UI_PORT)"
 	@$(COMPOSE) exec -T gateway curl -fsS http://127.0.0.1:8081/ready >/dev/null && echo "OK  Rust gateway   internal only"
-	@curl -fsS http://localhost:$(KEYCLOAK_PORT)/realms/$${KEYCLOAK_REALM:-tickets}/.well-known/openid-configuration >/dev/null && echo "OK  Keycloak       http://localhost:$(KEYCLOAK_PORT)"
+	@curl -fsS http://localhost:$(KEYCLOAK_PORT)/realms/$${KEYCLOAK_REALM:-etf-research}/.well-known/openid-configuration >/dev/null && echo "OK  Keycloak       http://localhost:$(KEYCLOAK_PORT)"
 	@curl -fsS http://localhost:$(MLFLOW_PORT)/health >/dev/null && echo "OK  MLflow         http://localhost:$(MLFLOW_PORT)"
 	@curl -fsS http://localhost:13133/ >/dev/null && echo "OK  OTel Collector http://localhost:13133"
 	@$(COMPOSE) exec -T agent python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)" >/dev/null && echo "OK  NAT agent      internal only"
@@ -269,10 +276,21 @@ rebuild-gateway: ## Rebuild and force-recreate the Rust gateway and UI
 verify-mcp: ## Verify that MCP rejects missing keys and accepts the agent key
 	$(COMPOSE) exec -T agent python /app/verify_mcp_auth.py
 
-fixtures: ## Apply the synthetic Guardrails test fixtures to the current database
-	$(COMPOSE) exec -T postgres \
-		sh -lc 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' \
-		< db/guardrail_test_fixtures.sql
+etf-check: ## Validate the ETF fixtures, investor profile, rules spec, and labelled cases
+	python3 scripts/validate_etf_fixtures.py
+
+rules-test: ## Test the shipped Rust evaluation engine against the fixtures; regenerates the baseline
+	cd mcp-server && cargo test
+
+diagrams: ## Re-render docs/img/*.png from the Mermaid sources embedded in README.md
+	@mkdir -p docs/img /tmp/etf-research-mmd
+	@python3 scripts/extract_diagrams.py /tmp/etf-research-mmd
+	@for f in /tmp/etf-research-mmd/*.mmd; do \
+		name=$$(basename "$$f" .mmd); \
+		docker run --rm -v /tmp/etf-research-mmd:/in -v "$$PWD/docs/img:/out" minlag/mermaid-cli \
+			-i "/in/$$name.mmd" -o "/out/$$name.png" -w 1400 -b white >/dev/null; \
+		echo "  rendered docs/img/$$name.png"; \
+	done
 
 verify-input-guardrails: ## Run the input-guardrail regression smoke test
 	$(COMPOSE) exec agent python /app/verify_input_guardrails.py
@@ -292,10 +310,48 @@ verify-llm-config: ## Verify the LLM provider builds and omits empty optional pa
 	$(COMPOSE) exec -T agent python /app/verify_llm_config.py
 
 verify-approvals: ## Run the offline approval-boundary tests (token binding, replay, ownership)
+	@echo "Resetting the dedicated approval-test ETFs (audit_events is append-only and is kept)"
+	@$(COMPOSE) exec -T postgres psql -q -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" -c \
+		"UPDATE etfs SET review_state='UNREVIEWED', decision=NULL, investment_score=NULL, \
+		 decided_rules_version=NULL, decided_profile_version=NULL, assigned_to=NULL, \
+		 research_note=NULL, updated_at=NOW() WHERE etf_id IN ($(APPROVAL_TEST_ETFS));"
 	$(COMPOSE) exec -T agent python /app/verify_approval_tokens.py
 
-verify-approvals-rust: ## Run the MCP approval verifier and mutation-policy tests
-	cd mcp-server && cargo test approval:: && cargo test mutation::
+verify-hitl: ## Verify a human can INITIATE a decision override end to end (needs the cluster and a model)
+	@echo "Resetting $(HITL_TEST_ETF)"
+	@$(COMPOSE) exec -T postgres psql -q -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" -c \
+		"UPDATE etfs SET review_state='UNREVIEWED', decision=NULL, investment_score=NULL, \
+		 decided_rules_version=NULL, decided_profile_version=NULL, assigned_to=NULL, \
+		 research_note=NULL, updated_at=NOW() WHERE etf_id IN ($(HITL_TEST_ETF));"
+	$(COMPOSE) exec -T agent python /app/verify_hitl_override.py
+	@$(MAKE) --no-print-directory verify-hitl-audit
+
+verify-hitl-audit: ## Assert the persisted history record of the human-initiated override
+	@$(COMPOSE) exec -T postgres psql -qAt -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)" -c \
+		"SELECT actor_type||'|'||rules_decision||'|'||COALESCE(llm_recommendation,'none')||'|'|| \
+		 final_decision||'|'||override_applied::int||'|'||(length(override_rationale)>0)::int \
+		 FROM audit_events WHERE etf_id IN ($(HITL_TEST_ETF)) AND action='EVALUATION_COMMITTED' \
+		 ORDER BY id DESC LIMIT 1;" | { \
+		read -r row; \
+		echo "  history: $$row"; \
+		IFS='|' read -r actor rules llm final override rationale <<< "$$row"; \
+		fail=0; \
+		[[ "$$actor" == "human" ]] || { echo "  [FAIL] actor_type=$$actor, expected human"; fail=1; }; \
+		[[ "$$rules" == "research" ]] || { echo "  [FAIL] rules_decision=$$rules, expected research"; fail=1; }; \
+		[[ "$$final" == "shortlist" ]] || { echo "  [FAIL] final_decision=$$final, expected shortlist"; fail=1; }; \
+		[[ "$$override" == "1" ]] || { echo "  [FAIL] override_applied=$$override, expected 1"; fail=1; }; \
+		[[ "$$rationale" == "1" ]] || { echo "  [FAIL] no override rationale was recorded"; fail=1; }; \
+		[[ "$$llm" != "shortlist" ]] || { echo "  [FAIL] llm_recommendation=$$llm: the model proposed the promotion itself"; fail=1; }; \
+		if [[ $$fail == 0 ]]; then \
+			echo "  [PASS] human override recorded, and the model never proposed the promotion (llm=$$llm)"; \
+		else exit 1; fi; }
+
+verify-approvals-rust: ## Run the MCP approval verifier and decision-policy tests
+	# There is no separate `mutation` module here: each action's state
+	# preconditions and audit shape differ enough that they live with the tool
+	# that applies them, under the row lock. `server::` and `rules::` are where
+	# the transition and reconciliation policy is asserted.
+	cd mcp-server && cargo test approval:: && cargo test server:: && cargo test rules::
 
 verify-trace-pipeline: ## Run the offline observability pipeline regression tests
 	$(COMPOSE) exec -T agent python /app/verify_trace_pipeline.py
@@ -306,7 +362,7 @@ trace-test: verify-trace-pipeline ## Verify observability end to end against MLf
 traces: ## Print the span tree of the most recent MLflow traces
 	python3 scripts/inspect_mlflow_traces.py --limit $${LIMIT:-3}
 
-static-check: verify-stream-adapter eval-test-host security-config-test ## Offline checks needing no Docker, cluster or model (python3 + node only)
+static-check: etf-check verify-stream-adapter eval-test-host security-config-test ## Offline checks needing no Docker, cluster or model (python3 + node + cargo)
 	@echo "Static checks passed."
 
 inspector: ## Start the optional loopback-only MCP Inspector (development profile)
@@ -351,7 +407,7 @@ open-all: ## Open assistant-ui, Keycloak admin, and MLflow
 login-info: ## Print the development login URLs and credentials
 	@printf "UI:             http://localhost:$(UI_PORT)\n"
 	@printf "Keycloak admin: http://localhost:$(KEYCLOAK_PORT)/admin/  (%s / %s)\n" "$${KEYCLOAK_ADMIN_USERNAME:-admin}" "$${KEYCLOAK_ADMIN_PASSWORD:-admin}"
-	@printf "Demo agent:     %s / %s\n" "$${KEYCLOAK_AGENT_USERNAME:-agent}" "$${KEYCLOAK_AGENT_PASSWORD:-agent}"
+	@printf "Demo user:      %s / %s\n" "$${KEYCLOAK_RESEARCHER_USERNAME:-researcher}" "$${KEYCLOAK_RESEARCHER_PASSWORD:-researcher}"
 
 # Every profile is enabled for the render. `docker compose config` omits
 # profile-gated services by default, so without this the check silently skipped
@@ -366,8 +422,8 @@ security-config-test: ## Validate the resolved Compose topology and security-cri
 # resolve. That stronger property is asserted first.
 auth-test: ## Smoke-test Keycloak discovery and every authentication boundary
 	@set -euo pipefail; \
-	realm="$${KEYCLOAK_REALM:-tickets}"; \
-	login_cookie="$${GATEWAY_LOGIN_COOKIE:-tickets_gateway_login}"; \
+	realm="$${KEYCLOAK_REALM:-etf-research}"; \
+	login_cookie="$${GATEWAY_LOGIN_COOKIE:-etf_research_gateway_login}"; \
 	login_headers=$$(mktemp); trap 'rm -f "$$login_headers"' EXIT; \
 	curl -fsS "$(KEYCLOAK_PUBLIC_URL)/realms/$$realm/.well-known/openid-configuration" >/dev/null; \
 	curl -sS -D "$$login_headers" -o /dev/null $(UI_PUBLIC_URL)/api/gateway/auth/login; \
@@ -477,8 +533,11 @@ eval-bootstrap-replace: ## Replace MLflow datasets from JSON
 eval-bootstrap-guardrails: ## Create or merge only the Guardrails dataset
 	@$(MAKE) --no-print-directory eval-bootstrap SUITE=guardrails
 
-eval-bootstrap-tools: ## Create or merge only the tool-calling dataset
-	@$(MAKE) --no-print-directory eval-bootstrap SUITE=tools
+eval-bootstrap-etf: ## Synchronize the labelled deterministic-evaluation cases
+	@$(MAKE) --no-print-directory eval-bootstrap SUITE=evaluation
+
+eval-bootstrap-policy: ## Synchronize the decision-policy cases
+	@$(MAKE) --no-print-directory eval-bootstrap SUITE=policy
 
 eval: ## Run a live evaluation; configure with SUITE, RUN_NAME, and other variables
 	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation run $(EVAL_RUN_ARGS)
@@ -489,7 +548,7 @@ eval-guardrails: ## Run only the Guardrails live evaluation suite
 eval-grounding: ## Run only the grounded-answer live evaluation suite
 	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation run --suite grounding --fail-threshold $(FAIL_THRESHOLD)
 
-eval-injection: ## Run only the data-plane prompt-injection suite (reads seeded TKT-INJ-* fixtures; mutates nothing)
+eval-injection: ## Run only the data-plane prompt-injection suite (poisons and restores ETF free text)
 	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation run --suite injection --fail-threshold $(FAIL_THRESHOLD)
 
 eval-bootstrap-grounding: ## Create or merge only the grounding dataset
@@ -498,14 +557,28 @@ eval-bootstrap-grounding: ## Create or merge only the grounding dataset
 eval-bootstrap-injection: ## Create or merge only the injection dataset
 	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation bootstrap --suite injection
 
-eval-tools: ## Run only the tool-calling live evaluation suite
-	@$(MAKE) --no-print-directory eval SUITE=tools
+eval-etf: ## Run only the labelled deterministic-evaluation accuracy suite
+	@$(MAKE) --no-print-directory eval SUITE=evaluation
 
-eval-all: ## Run all live evaluation suites with regression gates enabled
-	@$(MAKE) --no-print-directory eval SUITE=all
+eval-policy: ## Run only the decision-policy enforcement suite
+	@$(MAKE) --no-print-directory eval SUITE=policy
 
-eval-all-allow-failures: ## Run all suites without a nonzero regression-gate exit
-	@$(MAKE) --no-print-directory eval SUITE=all ALLOW_FAILURES=1
+eval-all: ## Run all five suites with strict gates; exits non-zero while any gate is red
+	@$(MAKE) --no-print-directory eval-suite-all SUITE=all ALLOW_FAILURES=0
+
+eval-all-allow-failures: ## Run all suites but never fail the shell on a metric gate
+	@$(MAKE) --no-print-directory eval-suite-all SUITE=all ALLOW_FAILURES=1
+
+# The injection suite reads poisoned free text, so the poison is applied and
+# restored around the run rather than seeded permanently. SUITE is honoured
+# rather than hardcoded, so a manual or CI run can poison, evaluate one suite,
+# and restore through the same path. The restore runs even when the evaluation
+# fails, which is why the exit status is captured rather than inherited.
+eval-suite-all:
+	@python3 scripts/poison_etf_metadata.py --inject | $(COMPOSE) exec -T postgres psql -q -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)"
+	@set +e; $(MAKE) --no-print-directory eval SUITE=$(SUITE) ALLOW_FAILURES=$(ALLOW_FAILURES); status=$$?; \
+		python3 scripts/poison_etf_metadata.py --restore | $(COMPOSE) exec -T postgres psql -q -U "$(POSTGRES_USER)" -d "$(POSTGRES_DB)"; \
+		exit $$status
 
 # --no-deps: these tests stub MLflow and talk to a local HTTP fixture, so they
 # need the image's Python but not the cluster. Without it, `docker compose run`
@@ -516,4 +589,4 @@ eval-test: ## Run evaluator parser and scorer unit tests in the evaluator image
 eval-test-host: ## Run the same evaluator unit tests on the host (no Docker)
 	python3 -m unittest discover -s evaluation/tests -t . -p 'test_*.py' -v
 
-test: eval-test verify-llm-config verify-guardrails verify-trace-pipeline verify-approvals security-test ## Run evaluator, Guardrails, observability, approval-boundary, and security tests
+test: etf-check rules-test eval-test verify-llm-config verify-guardrails verify-trace-pipeline verify-approvals security-test ## Run fixture, engine, evaluator, Guardrails, observability, approval-boundary, and security tests

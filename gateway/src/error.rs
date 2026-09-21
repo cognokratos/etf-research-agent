@@ -92,7 +92,7 @@ mod tests {
     fn upstream_errors_never_carry_their_cause_to_the_client() {
         let error = GatewayError::upstream(
             "keycloak",
-            "error sending request for url (http://keycloak:8080/realms/tickets/protocol/openid-connect/token)",
+            "error sending request for url (http://keycloak:8080/realms/etf-research/protocol/openid-connect/token)",
         );
         assert_eq!(error.status, StatusCode::BAD_GATEWAY);
         assert!(!error.message.contains("keycloak:8080"), "{}", error.message);

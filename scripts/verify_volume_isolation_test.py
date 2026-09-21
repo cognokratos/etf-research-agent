@@ -59,12 +59,12 @@ def _ensure_env_file() -> bool:
 
 
 def test_default_matches_the_documented_project_scoped_name() -> None:
-    """An unconfigured deployment gets the documented `tickets-agent-*` volumes."""
+    """An unconfigured deployment gets the documented `etf-research-agent-*` volumes."""
 
     config = _render()
     names = _volume_names(config)
     for key in VOLUME_KEYS:
-        assert names[key] == f"tickets-agent-{key}", names
+        assert names[key] == f"etf-research-agent-{key}", names
     print("PASS: the unconfigured default matches the documented project-scoped name")
 
 

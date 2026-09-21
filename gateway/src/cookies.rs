@@ -89,18 +89,18 @@ mod tests {
 
     #[test]
     fn cookie_lookup_matches_whole_names_only() {
-        let headers = headers_with("other=1; tickets_gateway_session=abc123; trailing=2");
-        assert_eq!(cookie_value(&headers, "tickets_gateway_session"), Some("abc123".into()));
+        let headers = headers_with("other=1; etf_research_gateway_session=abc123; trailing=2");
+        assert_eq!(cookie_value(&headers, "etf_research_gateway_session"), Some("abc123".into()));
         // A name that merely contains the target must not match.
         assert_eq!(cookie_value(&headers, "gateway_session"), None);
-        assert_eq!(cookie_value(&headers, "tickets_gateway_csrf"), None);
-        assert_eq!(cookie_value(&HeaderMap::new(), "tickets_gateway_session"), None);
+        assert_eq!(cookie_value(&headers, "etf_research_gateway_csrf"), None);
+        assert_eq!(cookie_value(&HeaderMap::new(), "etf_research_gateway_session"), None);
     }
 
     #[test]
     fn cookie_values_may_contain_equals_signs() {
-        let headers = headers_with("tickets_gateway_csrf=a=b=c");
-        assert_eq!(cookie_value(&headers, "tickets_gateway_csrf"), Some("a=b=c".into()));
+        let headers = headers_with("etf_research_gateway_csrf=a=b=c");
+        assert_eq!(cookie_value(&headers, "etf_research_gateway_csrf"), Some("a=b=c".into()));
     }
 
     #[test]
@@ -149,9 +149,9 @@ mod tests {
 
     #[test]
     fn clearing_a_cookie_expires_it_on_the_path_that_set_it() {
-        let cookie = clear_cookie(&config(), "tickets_gateway_session", BROWSER_COOKIE_PATH, true);
+        let cookie = clear_cookie(&config(), "etf_research_gateway_session", BROWSER_COOKIE_PATH, true);
         let cookie = cookie.to_str().expect("ascii");
-        assert!(cookie.starts_with("tickets_gateway_session=;"), "{cookie}");
+        assert!(cookie.starts_with("etf_research_gateway_session=;"), "{cookie}");
         assert!(cookie.contains("Max-Age=0"), "{cookie}");
         assert!(cookie.contains("Path=/api/gateway"), "{cookie}");
     }

@@ -17,15 +17,14 @@ def required(name: str) -> str:
 
 def main() -> None:
     # Keycloak requires the imported file's name to match its `realm` field
-    # (see --import-realm), so this must stay in step with the "tickets" realm
-    # name kept below as a stable, unchanged auth identifier.
-    output = Path(os.environ.get("KEYCLOAK_REALM_OUTPUT", "/import/tickets-realm.json"))
-    realm_name = os.environ.get("KEYCLOAK_REALM", "tickets")
-    client_id = os.environ.get("KEYCLOAK_GATEWAY_CLIENT_ID", "tickets-gateway")
+    # (see --import-realm), so these two must stay in step.
+    output = Path(os.environ.get("KEYCLOAK_REALM_OUTPUT", "/import/etf-research-realm.json"))
+    realm_name = os.environ.get("KEYCLOAK_REALM", "etf-research")
+    client_id = os.environ.get("KEYCLOAK_GATEWAY_CLIENT_ID", "etf-research-gateway")
     client_secret = required("KEYCLOAK_GATEWAY_CLIENT_SECRET")
-    agent_username = os.environ.get("KEYCLOAK_AGENT_USERNAME", "agent")
-    agent_password = required("KEYCLOAK_AGENT_PASSWORD")
-    agent_email = os.environ.get("KEYCLOAK_AGENT_EMAIL", "agent@example.test")
+    researcher_username = os.environ.get("KEYCLOAK_RESEARCHER_USERNAME", "researcher")
+    researcher_password = required("KEYCLOAK_RESEARCHER_PASSWORD")
+    researcher_email = os.environ.get("KEYCLOAK_RESEARCHER_EMAIL", "researcher@example.test")
     ui_public_url = os.environ.get("UI_PUBLIC_URL", "http://localhost:3000").rstrip("/")
     oidc_callback_url = os.environ.get(
         "OIDC_CALLBACK_URL",
@@ -35,7 +34,7 @@ def main() -> None:
     realm = {
         "realm": realm_name,
         "enabled": True,
-        "displayName": "Support Assistant",
+        "displayName": "ETF Research Agent",
         "sslRequired": "external",
         "registrationAllowed": False,
         "resetPasswordAllowed": True,
@@ -49,8 +48,8 @@ def main() -> None:
         "roles": {
             "realm": [
                 {
-                    "name": "agent",
-                    "description": "May use the support ticket triage assistant",
+                    "name": "researcher",
+                    "description": "May use the ETF research agent",
                     "composite": False,
                     "clientRole": False,
                 }
@@ -59,7 +58,7 @@ def main() -> None:
         "clients": [
             {
                 "clientId": client_id,
-                "name": "Support Assistant Rust authentication gateway",
+                "name": "ETF research Rust authentication gateway",
                 "enabled": True,
                 "protocol": "openid-connect",
                 "clientAuthenticatorType": "client-secret",
@@ -105,17 +104,17 @@ def main() -> None:
         ],
         "users": [
             {
-                "username": agent_username,
+                "username": researcher_username,
                 "enabled": True,
                 "emailVerified": True,
-                "email": agent_email,
+                "email": researcher_email,
                 "firstName": "Demo",
-                "lastName": "Agent",
-                "realmRoles": ["agent"],
+                "lastName": "Researcher",
+                "realmRoles": ["researcher"],
                 "credentials": [
                     {
                         "type": "password",
-                        "value": agent_password,
+                        "value": researcher_password,
                         "temporary": False,
                     }
                 ],

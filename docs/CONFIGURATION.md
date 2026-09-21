@@ -28,24 +28,38 @@ fails on the first request. `LLM_GUARD_MODEL` is independent of `LLM_MODEL` in
 both directions: changing the primary model below does not change which model
 classifies input, and vice versa.
 
-### `qwen3:8b` and the prioritization prompt
+### `qwen3:8b` and multi-tool trajectories
 
-In repeated local testing against this support-ticket example, `qwen3:8b`
-answers the single-tool and no-tool demonstration prompts correctly and
-consistently (searching tickets, fetching one ticket, summarizing a ticket's
-history). It consistently failed to produce a final answer for "Which ticket
-should we handle first, and why?": instead of reasoning from the ticket list
-`search_tickets` already returns, it called `get_ticket` on every open ticket
-and then stopped without ever emitting closing text. The agent, MCP server and
-guardrails all behaved correctly throughout — the tool calls, their arguments,
-and the underlying data were all correct; only the model's final response was
-missing. This reads as a small local model's tool-orchestration limit on a
-longer multi-tool trajectory, not a defect in the application, though a model
-swap does not by itself rule out every other explanation.
+`qwen3:8b` is what this application ships and what its demonstration prompts
+are written against. It answers the single-tool questions reliably: search or
+filter the universe, fetch one fund, run `evaluate_etf`, read a decision
+history, ask for the research summary.
 
-`qwen3.5:9b`, served by the same local Ollama, answered the identical prompt
-correctly and consistently (it did not even need the `get_ticket` fan-out —
-`search_tickets`'s own result was enough). To try it:
+The longer trajectories ask more of it. Comparing two funds needs two
+evaluations held side by side; committing a decision is `get_etf` ->
+`evaluate_etf` -> `get_research_context` -> `commit_evaluation`, with the
+engine's decision carried faithfully through every step. A small model can stop
+short on a chain like that — fanning out tool calls and never emitting closing
+text — while the agent, the MCP server and the rails all behave correctly
+underneath it.
+
+Two things are worth separating here, because they fail differently:
+
+* **Tool orchestration is the model's.** If the trajectory is incomplete, the
+  answer is incomplete. That is a model limit, not a policy failure.
+* **The decision is never the model's.** It comes from the deterministic engine
+  in Rust, and the approval boundary refuses a token whose `expected_choice` no
+  longer matches the recomputed evaluation. A confused model produces a worse
+  *answer*; it cannot produce a wrong *decision*. The `evaluation` and `policy`
+  suites measure the first, and `make rules-test` plus `make verify-approvals`
+  establish the second with no model in the loop at all.
+
+So before concluding anything from a weak answer on a multi-tool prompt, check
+which of those two moved. `make eval-etf` and `make eval-policy` report them
+separately and on purpose.
+
+**Trying a larger model.** Any OpenAI-compatible endpoint works, and nothing
+else changes:
 
 ```bash
 # in .env
@@ -54,9 +68,10 @@ LLM_GUARD_MODEL=qwen3.5:9b
 ```
 
 then `ollama pull qwen3.5:9b` (or `make pull-models` if `LLM_MODEL` is already
-set) and `make dev`. This is not a recommendation to change the shipped
-default — `qwen3:8b` remains what the template ships and is smaller/cheaper to
-run — only a confirmed working alternative for this specific prompt.
+set) and `make dev`. This is not a recommendation to change the shipped default
+— `qwen3:8b` is smaller and cheaper to run — and the published figures in
+[EVALUATION_ANALYSIS.md](EVALUATION_ANALYSIS.md) were produced on the default,
+so a model swap invalidates the comparison until the suites are re-run.
 
 ### Why "empty means omitted" needed code
 
@@ -86,17 +101,17 @@ rule to the guard model's `extra_body`.
 
 ## Project and volume identity
 
-`docker-compose.yml` pins the project name (`tickets-agent` by default) so
+`docker-compose.yml` pins the project name (`etf-research-agent` by default) so
 container, network and volume names do not derive from the clone directory.
 `COMPOSE_PROJECT_NAME` and `docker compose -p` both override it, and that
 override reaches the four persistent volumes too: `postgres-data`,
 `mlflow-data`, `keycloak-data` and `keycloak-import` each default to
 `${the-effective-project-name}-<volume>`, computed from whichever of `-p`,
-`COMPOSE_PROJECT_NAME`, or the `tickets-agent` default actually won for that
-invocation. That is what lets a template checkout and a domain fork run side
-by side on one Docker host with genuinely separate storage, not only separate
-containers — setting the project name once is enough; nothing else needs to
-change per project.
+`COMPOSE_PROJECT_NAME`, or the `etf-research-agent` default actually won for that
+invocation. That is what lets this application and the template it is built on
+run side by side on one Docker host with genuinely separate storage, not only
+separate containers — setting the project name once is enough; nothing else
+needs to change per project.
 
 Each volume's computed default is still overridable
 (`POSTGRES_DATA_VOLUME`, `MLFLOW_DATA_VOLUME`, `KEYCLOAK_DATA_VOLUME`,

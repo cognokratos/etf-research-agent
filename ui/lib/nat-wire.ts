@@ -12,7 +12,7 @@
  * changes the token's runtime type from string to number/boolean/null, and the
  * downstream UI adapter — which only forwards string deltas — then silently
  * drops them. The visible symptom is an answer with every number, boolean and
- * date fragment missing: "ticket TKT- has  history events, priority ."
+ * date fragment missing: "VWCE-XETRA scores  with decision , TER %."
  *
  * Only genuine JSON *containers* are decoded, because some NAT workflow outputs
  * legitimately serialize a structured ChatResponse object into `value`.

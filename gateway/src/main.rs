@@ -1,4 +1,4 @@
-//! tickets authentication gateway.
+//! ETF research authentication gateway.
 //!
 //! A backend-for-frontend between the browser and the agent: it owns the OIDC
 //! authorization-code flow, holds the tokens so the browser never sees them, and
@@ -38,7 +38,7 @@ use crate::state::AppState;
 #[tokio::main]
 async fn main() {
     if let Err(error) = run().await {
-        eprintln!("tickets authentication gateway failed: {error:#}");
+        eprintln!("ETF research authentication gateway failed: {error:#}");
         std::process::exit(1);
     }
 }
@@ -60,7 +60,7 @@ async fn run() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "tickets_auth_gateway=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "etf_auth_gateway=info,tower_http=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -91,7 +91,7 @@ async fn run() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .context("failed to bind authentication gateway")?;
-    info!(%address, "tickets authentication gateway listening");
+    info!(%address, "ETF research authentication gateway listening");
 
     axum::serve(listener, http::router(state))
         .with_graceful_shutdown(async {

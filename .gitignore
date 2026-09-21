@@ -20,9 +20,10 @@ ui/*.tsbuildinfo
 # Local scratch output.
 *.log
 
-# Evaluation output. Runs write here; nothing generated is committed, so a CI
-# artifact can never be confused with a stale checked-in result.
-evaluation/results/
+# Evaluation output under evaluation/results/ is deliberately NOT ignored here:
+# unlike the template, this application publishes its deterministic baseline and
+# its latest suite results as checked-in evidence. Regenerating them is a
+# reviewable diff rather than an untracked side effect.
 
 # Python build artifacts (created by an editable install).
 *.egg-info/

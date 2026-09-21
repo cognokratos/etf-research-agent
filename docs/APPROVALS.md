@@ -1,21 +1,34 @@
 # Human approval for state-changing actions
 
-**Optional, and off in the shipped configuration.** The sample application is
-read-only and the model has no capability to change state.
+**Required, and on in the shipped configuration.** Recording an approved
+research decision is what this application does, so unlike the template it is
+built on — where the sample is read-only and approvals are an opt-in
+demonstration — the boundary here is not optional. The MCP server refuses to
+start without the shared secret, and the three state-changing functions are
+registered unconditionally.
 
-## Enabling it
+## The three actions
 
-All four are required; no single one opens the path:
+| Function | Action | Choice | Carries |
+| --- | --- | --- | --- |
+| `commit_evaluation` | `commit` | the decision, from all three | the advisory recommendation and a grounded note |
+| `shortlist_etf` | `shortlist` | `shortlist` only | a grounded note |
+| `assign_etf` | `assign` | none | the research owner |
 
-1. uncomment the `functions:` block in `agent/config.yml`;
-2. add `ticket_priority_change` to `workflow.tool_names`;
-3. set `HITL_APPROVAL_SECRET` (≥ 24 characters, identical for the agent and the
-   MCP server);
-4. set `HITL_ENABLE_INTERACTIVE=true` so NAT mounts its interaction endpoints.
+Each pauses for a human and then applies the change itself. There is no separate
+approval step and no token for the model to carry.
 
-Without the secret the MCP server routes **no execution endpoint at all** — there
-is no mutation surface rather than a disabled one. CI asserts the shipped
-default is read-only.
+## What must be configured
+
+1. `HITL_APPROVAL_SECRET` — ≥ 24 characters, **identical** for the agent and the
+   MCP server. Both enforce the length independently.
+2. `HITL_ENABLE_INTERACTIVE=true` so NAT mounts its interaction endpoints.
+
+Both default to working values in `docker-compose.yml`. What CI asserts is not
+that the surface is absent but that it is *consistent* — see
+`scripts/verify_approval_surface.py`. A half-configured boundary is the failure
+worth catching: two different secrets, or a secret on one side only, starts
+cleanly, serves reads, and then fails after a human has already decided.
 
 ## The flow
 
@@ -125,39 +138,54 @@ change was applied.
 
 ## The audit trail
 
-`ticket_audit` is append-only by **trigger**, not by convention. A decision record
-that can be edited or deleted is not an audit trail.
+`audit_events` is append-only by **trigger**, not by convention. A decision
+record that can be edited or deleted is not an audit trail.
 
-* typed facts (`ticket_id`, `previous_priority`, `new_priority`, `actor_id`,
-  `request_id`, `nonce`) are structurally separate from untrusted free text
-  (`rationale`, `payload`), so the boundary is visible in the schema;
-* `policy_context` records the policy version in force when the decision was
-  taken, so an old row stays interpretable after the rules change;
-* `tickets.priority` is the current evaluation and these rows are the committed
-  decisions that produced it. Reading one is never a substitute for the other.
+* typed facts (`etf_id`, `actor_type`, `actor_id`, `previous_state`,
+  `new_state`, `rules_decision`, `llm_recommendation`, `final_decision`,
+  `investment_score`, `request_id`) are structurally separate from untrusted free
+  text (`override_rationale`, `justification`, `details`), so the boundary is
+  visible in the schema;
+* `rules_version` and `profile_version` record the policy in force when the
+  decision was taken, so an old row stays interpretable after the rules or the
+  investor profile change. The decision columns are one coherent snapshot or
+  they are all null — an assignment creates no decision and leaves them empty
+  rather than restating a decision from a different policy generation;
+* the `etfs` row is the *current* state and these rows are the committed
+  decisions that produced it. Reading one is never a substitute for the other;
+* `consumed_approval_tokens` makes an approval spendable exactly once, and the
+  nonce is inserted in the same transaction as the mutation, so a replay fails
+  atomically.
 
-## Generalizing it
+## Domain-neutral claims, ETF meanings
 
-| Template | Yours |
+The claim names are shared verbatim with `mcp-server/src/approval.rs`, which has
+no opinion about ETFs:
+
+| claim | ETF meaning |
 | --- | --- |
-| `resource_id` | any identifier |
-| `set_ticket_priority` | your action, in `mutation::ACTIONS` |
-| `low` / `medium` / `high` / `urgent` | your `allowed_choices` |
-| `payload.note` | your payload fields |
+| `resource_id` | canonical `etf_id` |
+| `choice` | the decision the human approved |
+| `expected_choice` | the deterministic decision in force when they chose |
+| `rationale` | the override rationale they typed |
+| `payload` | `llm_recommendation`, `research_note`, `assignee` |
 
 Adding an action: a request model and a registered function in
-`agent/src/nat_streaming_react/approval.py`, an entry in `mutation::ACTIONS` on
+`agent/src/nat_streaming_react/approval.py`, an entry in `approval::ACTIONS` on
 the MCP side, and the mutation itself. Nothing in the token format or the
 verification changes.
 
 The action registry is a fixed list rather than configuration: the set of things
-a human can authorize is a security property of the deployment.
+a human can authorize is a security property of the deployment. A choice outside
+an action's `allowed_choices` is refused even with a valid signature — which is
+why `shortlist` accepts only `shortlist`, while `commit` accepts all three.
 
 ## Verifying it
 
 ```
-make verify-approvals        # 29 agent-side checks, offline
-make verify-approvals-rust   # 25 MCP-side checks
+make verify-approvals        # agent-side checks, offline
+make verify-approvals-rust   # MCP-side verifier, decision and engine policy
+make verify-hitl             # a human INITIATES an override, end to end
 ```
 
 Between them: forged and tampered tokens, expiry, the lifetime ceiling and its
@@ -173,5 +201,5 @@ agree.
 Replay and rollback are tested at the level of the policy and the verifier.
 The transactional behaviour itself — nonce conflict under concurrency, rollback
 on a failed audit insert — is enforced by the database and is **not** covered by
-an automated test in this template, because it needs a live PostgreSQL. See
+an automated test, because it needs a live PostgreSQL. See
 [LIMITATIONS.md](LIMITATIONS.md).
