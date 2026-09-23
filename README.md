@@ -36,10 +36,13 @@ market-data feed and no positions. "Shortlisted" means recorded as a candidate.
 Scores measure quality and fit against a dated snapshot; they are not forecasts,
 not advice, and not trade recommendations.
 
-Built on the general-purpose template in this repository's `main` branch —
+Built on the general-purpose agent template at
+[cognokratos/simple-agent-template](https://github.com/cognokratos/simple-agent-template) —
 authentication, guardrails, approvals, tracing, evaluation harness and
 deployment are shared with it; the rules engine, the ETF universe, the tools,
-the prompts and the suites are this application's.
+the prompts and the suites are this application's. See
+[docs/UPSTREAM.md](docs/UPSTREAM.md) for what is still shared and how to port a
+fix from it.
 
 ## Start
 
@@ -114,6 +117,7 @@ nothing was applied.
 | [APPROVALS.md](docs/APPROVALS.md) | The human-approval boundary and its four layers |
 | [VERIFICATION.md](docs/VERIFICATION.md) | What you can check, what it needs, what it proves |
 | [LIMITATIONS.md](docs/LIMITATIONS.md) | Known gaps, untested behaviour, and production prerequisites |
+| [UPSTREAM.md](docs/UPSTREAM.md) | What is shared with the template, and how to port a fix from it |
 | [DEMO.md](docs/DEMO.md) | A full walkthrough: prompts to type, and what should happen |
 | [ACCEPTANCE.md](docs/ACCEPTANCE.md) | What was claimed, and what establishes it |
 | [EVALUATION_ANALYSIS.md](docs/EVALUATION_ANALYSIS.md) | The measured figures, and how to read them |
