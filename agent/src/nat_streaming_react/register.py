@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """ReAct agent workflow that preserves native-tool final-answer streaming.
 
-NAT 1.8's built-in ReAct stream buffers output until it sees the textual
+NAT's built-in ReAct stream (still in 1.9.0) buffers output until it sees the textual
 ``Final Answer:`` marker. Native tool calling returns a normal assistant
 message instead, so the built-in fallback emits the complete answer as one
 chunk. This local component keeps NAT's ReAct graph and MCP tooling but streams
@@ -228,7 +228,7 @@ async def streaming_react_agent_workflow(
             # Native tool calling already separates tool calls from assistant
             # content structurally. There is no need to wait for the textual
             # "Final Answer:" marker; doing so is what collapsed the whole
-            # final answer into one fallback chunk in NAT 1.8.
+            # final answer into one fallback chunk in NAT 1.8 and 1.9.
             if config.use_native_tool_calling:
                 async for message, metadata in graph.astream(
                     state,

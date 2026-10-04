@@ -16,6 +16,13 @@ The second half asserts what the provider exists for: an optional pass-through
 parameter configured empty must be **absent** from the client, not sent as ``""``
 or as the literal string ``"null"``.
 
+Note for upgrades: NAT 1.9 wraps every LangChain client in
+``configurable_fields(model_name=...)``, so ``builder.get_llm`` returns a
+``RunnableConfigurableFields`` where 1.8 returned a ``ChatOpenAI``. The checks
+below unwrap it rather than assuming the shape — and assert that the wrapper is
+there, because its presence is what makes per-request model selection possible
+upstream, and this workflow deliberately does not offer it.
+
 Run inside the agent image::
 
     docker compose exec agent python /app/verify_llm_config.py
@@ -91,23 +98,101 @@ def check_optional_parameters() -> None:
     print("PASS: prune_empty_params drops absent values at every depth")
 
 
+def _unwrap_chat_client(client):
+    """Reach the ChatOpenAI underneath NAT's Runnable wrappers.
+
+    NAT 1.9 wraps every LangChain client in
+    ``configurable_fields(model_name=...)`` so a request can override the model
+    per call, which makes the object NAT hands back a
+    ``RunnableConfigurableFields`` rather than the ``ChatOpenAI`` 1.8 returned.
+    The wrapper keeps the real client on ``.default``; retry and thinking
+    patches may add further layers, so unwrap until there is nothing left to
+    unwrap rather than assuming a fixed depth.
+    """
+
+    seen = 0
+    while (inner := getattr(client, "default", None)) is not None and seen < 8:
+        client = inner
+        seen += 1
+    return client
+
+
+async def _build_primary(reasoning_effort: str):
+    """Build the shipped ``primary`` LLM with ``LLM_REASONING_EFFORT`` pinned.
+
+    The value is set explicitly rather than inherited, because the deployed
+    default is ``none`` (it suppresses Qwen3 thinking on Ollama), so a check that
+    read the ambient environment would be asserting about whatever the operator
+    happened to configure rather than about the provider.
+    """
+
+    previous = os.environ.get("LLM_REASONING_EFFORT")
+    os.environ["LLM_REASONING_EFFORT"] = reasoning_effort
+    try:
+        config = load_config(str(CONFIG_PATH))
+    finally:
+        if previous is None:
+            os.environ.pop("LLM_REASONING_EFFORT", None)
+        else:
+            os.environ["LLM_REASONING_EFFORT"] = previous
+
+    async with WorkflowBuilder() as builder:
+        await builder.add_llm("primary", config.llms["primary"])
+        return await builder.get_llm("primary", wrapper_type=LLMFrameworkEnum.LANGCHAIN)
+
+
+def _sent_reasoning_effort(chat_client) -> object:
+    """What ChatOpenAI will actually send, wherever it chose to keep it."""
+
+    kwargs = getattr(chat_client, "model_kwargs", None) or {}
+    value = getattr(chat_client, "reasoning_effort", None)
+    return value if value is not None else kwargs.get("reasoning_effort")
+
+
 async def check_the_client_actually_builds() -> None:
     """The regression. Needs no network: ChatOpenAI construction is local."""
 
     os.environ.setdefault("MCP_API_KEY", "verify-only-not-used")
-    config = load_config(str(CONFIG_PATH))
-
-    async with WorkflowBuilder() as builder:
-        await builder.add_llm("primary", config.llms["primary"])
-        client = await builder.get_llm("primary", wrapper_type=LLMFrameworkEnum.LANGCHAIN)
+    client = await _build_primary("")
 
     assert client is not None, "the provider yielded no client"
-    assert type(client).__name__ == "ChatOpenAI", type(client).__name__
-    print(f"PASS: the registered provider builds a {type(client).__name__}")
 
-    model = getattr(client, "model_name", None)
+    chat_client = _unwrap_chat_client(client)
+    assert type(chat_client).__name__ == "ChatOpenAI", (
+        f"expected a ChatOpenAI under NAT's wrappers, found {type(chat_client).__name__} "
+        f"(outermost was {type(client).__name__})"
+    )
+    print(f"PASS: the registered provider builds a {type(chat_client).__name__}")
+
+    model = getattr(chat_client, "model_name", None)
     assert model, "the built client has no model name"
     print(f"PASS: the built client is bound to {model!r}")
+
+    # The point of the provider: a parameter configured empty must be absent
+    # from the *built* client, not merely from the config dump. Asserted here
+    # against the real object, because the dump-level check above cannot see
+    # what ChatOpenAI actually received -- and in both directions, so the check
+    # cannot pass by the provider simply dropping the parameter altogether.
+    sent = _sent_reasoning_effort(chat_client)
+    assert sent is None, f"reasoning_effort reached the built client as {sent!r} despite being configured empty"
+    print("PASS: an empty optional parameter is absent from the built client, not sent blank")
+
+    configured = _unwrap_chat_client(await _build_primary("none"))
+    sent = _sent_reasoning_effort(configured)
+    assert sent == "none", f"reasoning_effort='none' reached the built client as {sent!r}"
+    print("PASS: a configured optional parameter reaches the built client verbatim ('none')")
+
+    # NAT 1.9 added per-request model override. This workflow does not use it —
+    # `register._stream_fn` never passes `configurable` — and the gateway
+    # rejects a client-supplied `model` outright (`deny_unknown_fields` on
+    # ChatProxyRequest), so the configured model is the only one reachable.
+    # Asserted so that adopting NAT's own `_build_lc_config` later is a visible
+    # decision rather than a silent handover of model choice to the caller.
+    assert type(client).__name__ == "RunnableConfigurableFields", (
+        f"NAT no longer wraps the client for per-request model override "
+        f"(found {type(client).__name__}); re-check who can choose the model"
+    )
+    print("PASS: per-request model override exists upstream and is deliberately unused here")
 
 
 def main() -> None:

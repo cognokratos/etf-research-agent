@@ -15,7 +15,7 @@ below and repeated at its use site, so an upgrade has one place to check.
 #: Private NAT/OpenTelemetry attributes this package reads, and why.
 #:
 #: These are *not* part of NAT's public API. They are used because NAT exposes no
-#: public equivalent in 1.8.0, and each one is read defensively so that a rename
+#: public equivalent in 1.8.0 or 1.9.0, and each one is read defensively so that a rename
 #: degrades to reduced observability rather than a failed request.
 #:
 #: ``ContextState._root_span_id``
