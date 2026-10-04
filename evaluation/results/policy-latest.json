@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-10-04T17:26:10.843555+00:00",
+  "generated_at": "2026-10-04T20:01:10.068298+00:00",
   "mode": "live-agent",
   "suite": "policy",
   "experiment": "etf-decision-policy",
   "dataset": "etf-decision-policy-cases",
   "dataset_id": "d-7ed5fc5b188040b684449f85403429eb",
   "record_count": 5,
-  "run_id": "128908f58ff6452cb7de273f8da42a60",
+  "run_id": "99961f78da6944008dff9053821bcf3f",
   "required_metric": "decision_policy_correct/mean",
   "required_value": 1.0,
   "fail_threshold": 1.0,
@@ -18,7 +18,7 @@
       "guard_model": "qwen3:8b",
       "reasoning_effort": "none",
       "guard_reasoning_effort": "none",
-      "build_commit": "dbf1e715937a8fa7b80a20c50d1806f4a52de3af",
+      "build_commit": "34104f2e55ebff35932b469d7b13887d07667e45",
       "config_path": "/app/config.yml",
       "config_sha256": "3c34e023632ae8a7b031c4c1ae00d2c84b312255c768cadb2358dcec4fc14e60",
       "prompt_sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
@@ -33,7 +33,7 @@
       ]
     },
     "harness": {
-      "git_commit": "dbf1e715937a8fa7b80a20c50d1806f4a52de3af",
+      "git_commit": "34104f2e55ebff35932b469d7b13887d07667e45",
       "source": "git",
       "dirty": false
     },
@@ -68,15 +68,15 @@
     "policy_no_forecast_claim/mean": 1.0,
     "policy_no_misattributed_etf/mean": 1.0,
     "policy_read_only/mean": 1.0,
-    "latency_ms/mean": 17583.893999999997
+    "latency_ms/mean": 23713.553
   },
   "latency": {
     "count": 5,
-    "min_ms": 16079.5,
-    "p50_ms": 17612.4,
-    "p95_ms": 19040.9,
-    "max_ms": 19040.9,
-    "mean_ms": 17583.9,
+    "min_ms": 16303.8,
+    "p50_ms": 18218.7,
+    "p95_ms": 33848.4,
+    "max_ms": 33848.4,
+    "mean_ms": 23713.6,
     "note": "End-to-end, question in to final token out, on the configured model."
   }
 }

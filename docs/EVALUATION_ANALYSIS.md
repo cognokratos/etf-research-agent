@@ -7,24 +7,27 @@ the commands see [`../evaluation/README.md`](../evaluation/README.md).
 
 ## The current state, in one table
 
-Measured on 2026-10-04 against build `dbf1e71` — NeMo Agent Toolkit 1.9.0,
+Measured on 2026-10-04 against build `34104f2` — NeMo Agent Toolkit 1.9.0,
 `qwen3:8b` through a local Ollama, prompt digest `00df8142…`, clean tree,
-provenance `consistent: true`. That build includes the MCP change that returns
+provenance `consistent: true`. That build includes the MCP changes that return
 every rate with its percentage
-([below](#the-expense-ratio-was-misstated-by-a-factor-of-a-hundred)) and the
-scorer and dataset fixes made earlier the same day. The published artifact for
+([below](#the-expense-ratio-was-misstated-by-a-factor-of-a-hundred)) and give
+each score component its fund facts
+([below](#the-explanation-lost-its-facts-and-how-the-tool-contract-got-them-back)),
+and the scorer and dataset fixes made earlier the same day. The published artifact for
 each suite is one full five-suite run on that build; the stability column counts
-every run made that day on NAT 1.9 (the agent prompt was unchanged throughout),
+every run made that day on a committed NAT 1.9 build (the agent prompt was
+unchanged throughout),
 plus one same-day run of the pre-migration NAT 1.8 build for comparison (see
 [below](#the-nat-19-upgrade-measured-like-for-like)).
 
 | Suite | Result | Gated metric | Stability | Ungated signal worth reading |
 |---|---|---|---|---|
-| `evaluation` | PASS 1.0 | `evaluation_correct` | 1.0 on 2/2 runs on 1.9, and on same-day 1.8 | — |
-| `injection` | PASS 1.0 | `injection_resisted` | 1.0 on 4/4 runs on 1.9, and on 1.8 | `injection_no_forecast_claim` 0.833 on two runs (see [the 1.8 comparison](#the-nat-19-upgrade-measured-like-for-like)) |
-| `guardrails` | PASS 1.0 | `prompt_robustness_correct` | 1.0 on 2/2 runs on 1.9, and on same-day 1.8 | — |
-| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 15/15 runs on 1.9, and on 1.8; has measured 0.909 historically | `research_units_correct` 1.0 on 3/3 since the MCP fix (0.333 before it); `research_no_ungrounded_numbers` 1.0 on 12/12 since its fix; `research_required_facts_present` 0.5 |
-| `policy` | PASS 1.0 | `decision_policy_correct` | 1.0 on 4/4 runs on 1.9, and on 1.8 | — |
+| `evaluation` | PASS 1.0 | `evaluation_correct` | 1.0 on 3/3 runs on 1.9, and on same-day 1.8 | — |
+| `injection` | PASS 1.0 | `injection_resisted` | 1.0 on 5/5 runs on 1.9, and on 1.8 | `injection_no_forecast_claim` 0.833 on two runs (see [the 1.8 comparison](#the-nat-19-upgrade-measured-like-for-like)) |
+| `guardrails` | PASS 1.0 | `prompt_robustness_correct` | 1.0 on 3/3 runs on 1.9, and on same-day 1.8 | — |
+| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 20/20 runs on 1.9, and on 1.8; has measured 0.909 historically | `research_units_correct` 1.0 on 8/8 since the MCP fix (0.333 before it); `research_no_ungrounded_numbers` 1.0 on 17/17 since its fix; `research_required_facts_present` 0.667 — the misses are issuer names |
+| `policy` | PASS 1.0 | `decision_policy_correct` | 1.0 on 5/5 runs on 1.9, and on 1.8 | — |
 
 **Every gate is green, and this page does not let that mean more than it does.**
 Two things changed at once since the previous published figures, and only one of
@@ -251,7 +254,7 @@ unsupported assertion, no forecast claim, no execution claim, read-only througho
 instead of the context bundle.
 
 **It clears consistently now, and that is still not the same as being fixed.** On
-2026-10-04 the gate measured 1.0 on sixteen runs — fifteen on NAT 1.9, one on NAT 1.8 —
+2026-10-04 the gate measured 1.0 on twenty-one runs — twenty on committed NAT 1.9 builds, one on NAT 1.8 —
 with `research_context_tool_used` at 1.0 every time. Nothing in the grounding path
 changed to bring that about; the same model produced 0.909 on an earlier prompt.
 So the honest report is "passing, historically unstable", and the gate stays where
@@ -324,16 +327,57 @@ baseline byte-identically). After the fix the stated values are right — VWCE-X
 0.22%, CSPX-LSE 0.07%, IEAC-LSE 0.2% — and `research_units_correct` is 1.0 on
 three of three runs. It stays ungated until it has held for longer than one day.
 
-**One side effect, recorded rather than smoothed over.** With the richer payload,
-the IEAC-LSE grounding answer changed shape on three of three runs: it now lists
-each component's points and weights but no longer names the fund facts behind
-them — in particular not the asset class, "bond", which is the reason its
-profile-fit cap applies. That is why `research_required_facts_present` reads 0.5
-on these runs rather than 0.667; the other misses are the issuer names for
-CSPX-LSE and VWCE-XETRA, as on every earlier run. VWCE-XETRA's answer shifted the
-same way on runs *before* this change, so the payload is not the only cause of
-the style, but for IEAC-LSE the shift coincides with it exactly. The decision and
-caps are still stated correctly; the explanation of *why* is thinner.
+### The explanation lost its facts, and how the tool contract got them back
+
+**The regression.** On the build that fixed the units, the IEAC-LSE grounding
+answer stated its decision and both caps correctly but stopped naming the fund
+facts behind them — in particular not the asset class, "bond", which is why its
+profile-fit cap applies. It held on three of three runs, and
+`research_required_facts_present` fell from 0.667 to 0.5.
+
+**What it was not.** The asset class was never missing from the payload: it was
+in `verified_metrics.asset_class` and in the `risk_fit` rule note both before and
+after the change, and the payload diff contained only the percentage fields and
+one new `required_elements` line telling the model to quote rates from them.
+
+**What it was, measured.** Rebuilding with that one instruction removed, and the
+percentage fields kept, restored "bond" on two of two runs, with
+`research_units_correct` still 1.0 — so the instruction was the trigger. The
+cause underneath was the tool contract: `required_elements` asked for score
+components "named from `components`", a bare name-to-points map, so stating the
+facts behind a component had always been a habit the model was free to drop, and
+an instruction that pointed it at per-rule numbers was enough to displace it.
+Those same ablation runs showed a second gap that no metric caught: the answer
+called the bond fund "aligned with the investor's high risk tolerance". The rule
+note reads `risk_tolerance=high against asset_class=bond`, and nothing in the
+payload said whether that fact helped or hurt — the engine's answer, that the
+fund earned 0.1 of that rule, was only in the flat rule list.
+
+**The fix, in the tool rather than the prompt.** `get_research_context` now
+returns `deterministic_conclusions.component_evidence`: the engine's own matched
+rules grouped by component, each with its field, observed value,
+`earned_fraction` and note. It is a regrouping, so it cannot change a decision —
+a test asserts, for every fund in the snapshot, that it is exactly the matched
+rules and covers every scored component, and the deterministic baseline is
+byte-identical. `required_elements` now asks for each component's facts from
+that evidence, including whether each earned or lost points, and for the facts
+that triggered a cap. Nothing in it names a fund, an asset class or a case.
+
+**The result.** A first version without `earned_fraction` (superseded before it
+was pushed, so its runs are not counted elsewhere on this page) brought "bond"
+back on four of four runs but kept the inverted reading on all four. On the final build,
+five of five runs — four grounding runs and the one inside the published
+five-suite run — name the bond asset class with its direction right ("Bond
+(earned 0.6 points out of 6)", "Profile Fit: earned 6.8 points out of 20
+available"), and none calls it a fit.
+`research_required_facts_present` is back to 0.667; the misses are the issuer
+names for CSPX-LSE and VWCE-XETRA, as on every run before, and CSPX-LSE's index
+name on one run. Answers are longer for it: grounding p50 is about 25 seconds,
+against about 18 before.
+
+What the metric still cannot see is direction. "Bond" satisfies the term group
+whether the answer says it helped or hurt; the inversion above was found by
+reading the answers, and would pass the suite today.
 
 **A note on grounding latency.** One republication that day measured p50
 31–35 seconds on three runs, against about 18 seconds before and after it on
@@ -711,6 +755,10 @@ cases an interpolated percentile invents a value that was never measured.
   artifacts described an older prompt for months. `provenance.agent.prompt_sha256`
   is what reveals it: compare it with the running agent's before reading a number
   as current.
+- **Direction is not scored.** A required fact is "present" whether the answer
+  says it helped or hurt the score. The one inversion observed — a bond fund
+  described as a good fit for a high risk tolerance — was found by reading
+  answers, not by a metric.
 - **Figures are unit-checked only in `grounding`.** `unit_errors` runs in the
   grounding scorer; the before-and-after counts for the other suites come from
   applying the same function to their captured answers, not from a metric those
