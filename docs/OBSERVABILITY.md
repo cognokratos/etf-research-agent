@@ -95,9 +95,14 @@ error, rather than one replacing the other.
 `SensitiveHeaderRedactionProcessor` removes credential-bearing headers from span
 metadata: `authorization`, `proxy-authorization`, `cookie`, `set-cookie`,
 `x-api-key`, `api-key`, `x-auth-token`, `x-csrf-token`, and
-`x-authenticated-email`. The subject id and roles stay visible, because they are
-what makes a trace attributable; an email address adds nothing a trace needs and
-follows the span into whatever backend stores it.
+`x-authenticated-email`. An email address adds nothing a trace needs and follows
+the span into whatever backend stores it.
+
+The gateway's subject id and username are not credentials, so they are not on
+that list; they are removed by `UserIdentityProcessor` instead, as part of
+per-user attribution below. Roles and `x-request-id` stay: roles do not name a
+person, and the request id is what joins a trace to the history row that does
+record the actor.
 
 This is a **header deny-list and nothing more**. It does not make spans free of
 sensitive data:
@@ -113,12 +118,57 @@ The front-end worker already strips `Authorization` from the ASGI scope before
 NAT can see it, so this is the second layer, on the principle that a credential
 must get past two independent controls to be exported.
 
+## Per-user attribution
+
+NAT 1.9 attributes every span to the authenticated user, writing two keys:
+`nat.user.id` (always, `"unknown"` when there is none) and `user.id` (only when
+set — backends such as MLflow and Langfuse group traces by it).
+
+`UserIdentityProcessor` decides whether either leaves this process.
+**Off unless `OTEL_TRACE_USER_ID=true`.**
+
+What the value is matters to that decision. With
+`general.front_end.identity_header` configured, NAT does not put the gateway's
+identifier on the span: it derives
+`uuid5(namespace, "trusted-header:<header>\x1f<id>")` and exports that.
+
+**Pseudonymity is not anonymity.** The pseudonym is the same value for the same
+person on every request, so a trace store holding it can reconstruct one
+person's history of questions — and the traces already carry the question and
+the answer. It is also an *unkeyed* hash: NAT's namespace is a public constant,
+so anyone who knows or can guess a Keycloak subject can recompute the pseudonym
+and link that person's traces. It hides the subject from a casual reader of the
+trace store, not from someone looking for a particular person. That is why
+exporting it is a deployment decision for whoever operates the trace store and
+knows its access controls and retention, not a default.
+
+When off, `user.id` is **dropped** rather than masked — a literal placeholder
+would become a user in those backends' UIs — and `nat.user.id` is set to
+`[redacted]`, which keeps "not exported by policy" distinguishable from NAT's
+own `"unknown"`, meaning no identity was resolved at all.
+
+### The raw identity is withheld in both modes
+
+The switch alone is not enough. NAT also copies request headers into
+`nat.metadata`, so the gateway's `x-authenticated-user-id` (the Keycloak subject)
+and `x-authenticated-username` would be exported verbatim on every request,
+whatever the switch says. Measured on NAT 1.9.0 with the switch off: `user.id`
+was gone and `nat.user.id` read `[redacted]`, while both raw headers were present
+in `nat.metadata` on the workflow span.
+
+`UserIdentityProcessor` therefore redacts those two headers **unconditionally**.
+With attribution on, a trace is attributable through NAT's pseudonym only; the
+raw subject never leaves the agent. The template this application tracks ships
+the switch without this redaction; it is an ETF-side addition, recorded in
+[UPSTREAM.md](UPSTREAM.md). Asserted offline by `verify_trace_pipeline.py`.
+
 ## Configuration
 
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `NAT_TRACE_CAPTURE_CONTENT` | `true` | Record the readable question and answer. Disabling still records errors — a failure signal is not request content, and a root span with no output and no reason is what this pipeline exists to avoid. |
 | `NAT_TRACE_CONTENT_MAX_CHARS` | `65536` | Per-field bound; truncation is marked with `nat.trace.content_truncated` |
+| `OTEL_TRACE_USER_ID` | `false` | Export NAT 1.9's per-user pseudonym (`user.id`, `nat.user.id`). The raw gateway identity is withheld either way. See [Per-user attribution](#per-user-attribution). |
 | `OTEL_SERVICE_NAME` | `etf-research-agent` | MLflow experiment / service name |
 | `OTEL_COLLECTOR_TRACES_ENDPOINT` | collector | OTLP/HTTP endpoint |
 
@@ -134,6 +184,20 @@ Stated rather than glossed. This package is not purely public-API based:
 | `ContextState._root_span_id` | Pre-seeds the root span id so NAT's exporter and the OpenTelemetry SDK agree on one trace. NAT's own evaluation runtime sets it the same way. | NAT exposes a public way to supply the root span id, or accepts an ambient OTel context for the workflow root |
 | `nat.data_models.span._generate_nonzero_span_id` | Generates a span id in exactly NAT's format | NAT exports an equivalent without the leading underscore |
 | `OtelSpanExporter._span_prefix` | The attribute-name prefix our processors must match | NAT exposes the prefix publicly |
+
+All three are still private in NAT 1.9.0 (`_span_prefix` now lives on the base
+`SpanExporter` that `OtelSpanExporter` inherits); the upgrade removed none of
+them.
+
+One further private name, in FastAPI rather than NAT:
+
+| Private name | Why | Removal condition |
+| --- | --- | --- |
+| `FastAPI._telemetry` | FastAPI 0.142 (resolved transitively) traces every request natively whenever a global tracer provider exists — which `otel_setup` must create — and at startup adds a second OTLP exporter to that provider. NAT builds the app without FastAPI's public `telemetry=` argument, so `fastapi_worker.disable_fastapi_native_telemetry` switches it off in place before the server starts. Measured before the fix: a `GET /health` trace every few seconds, crowding the workflow traces out of `make trace-test`'s window. | NAT exposes FastAPI's constructor arguments |
+
+`verify_trace_pipeline.py` asserts the switch is still found and still disables
+FastAPI's per-request decision, so a FastAPI rename fails a check instead of
+silently doubling exports.
 
 The first two are resolved at import time, so a NAT upgrade that renames them
 fails loudly at startup rather than silently producing split traces. The third

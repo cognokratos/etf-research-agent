@@ -729,6 +729,158 @@ class UngroundedNumberTests(unittest.TestCase):
     def test_nothing_is_grounded_against_empty_evidence(self):
         self.assertEqual(self.ungrounded("score 683", ""), ["683"])
 
+    # Rounding. The first live baseline (2026-10-04) flagged a correct figure on
+    # every run: the engine serialises 9 x 0.85 as 7.6499999999999995 and the
+    # model, correctly, says 7.65. See docs/EVALUATION_ANALYSIS.md.
+
+    def test_float_serialisation_noise_rounded_by_the_answer_is_grounded(self):
+        evidence = '{"code": "STRUCT-R-SAMPLED", "points": 7.6499999999999995, "weight": 9}'
+        self.assertEqual(self.ungrounded("Fund Structure: 7.65/9", evidence), [])
+
+    def test_rounding_to_fewer_places_is_grounded(self):
+        evidence = '{"ratio": 0.123456, "aum_musd": 1234.6, "td": 2.675}'
+        for answer in ("ratio 0.12", "ratio 0.1235", "about 1235 million", "TD 2.68"):
+            with self.subTest(answer=answer):
+                self.assertEqual(self.ungrounded(answer, evidence), [])
+
+    def test_a_figure_the_model_computed_is_still_reported(self):
+        # GROUND-VTI-ARCA, run 2: "normalized contribution" 21.28 = 20 / 0.94,
+        # derived by the model and presented beside the engine's figures. Every
+        # input to that arithmetic is in the evidence; the result is not.
+        evidence = (
+            '{"components": {"cost_efficiency": 21}, "available_weight": 94, '
+            '"factors": [{"points": 20.0, "weight": 20, "fraction": 1.0}]}'
+        )
+        self.assertEqual(self.ungrounded("Cost Efficiency | 20.0 | 21.28", evidence), ["21.28"])
+
+    def test_rounding_is_to_the_answers_own_precision_only(self):
+        evidence = '{"points": 7.6499999999999995, "score": 17.6499999999999995}'
+        # Wrong rounding, and a double rounding (17.65 -> 17.7), are not the
+        # evidence value at the precision the answer claims.
+        self.assertEqual(self.ungrounded("7.66", evidence), ["7.66"])
+        self.assertEqual(self.ungrounded("17.7", evidence), ["17.7"])
+        # Claiming more precision than the evidence has is not rounding.
+        self.assertEqual(self.ungrounded("1234.57", '{"aum": 1234.6}'), ["1234.57"])
+
+
+class UnitErrorTests(unittest.TestCase):
+    """A rate stated with the wrong unit is an error, not a match.
+
+    Every rate the engine returns is a fraction (``"ter": 0.0022`` is 0.22%).
+    On 2026-10-04 answers wrote "TER of 0.0022%" and "TER at 0.0007%" -- the raw
+    fraction with a percent sign, wrong by a factor of a hundred -- and the
+    completeness check counted them as the expected figure because it matches
+    substrings. See docs/EVALUATION_ANALYSIS.md.
+    """
+
+    EVIDENCE = (
+        '{"ter": 0.0022, "top_10_concentration": 0.2, "data_completeness": 0.9, '
+        '"note": "TER above 0.10% and at or below 0.20%.", "holdings_count": 3600}'
+    )
+
+    def setUp(self):
+        from evaluation.scorers import unit_errors
+
+        self.errors = lambda answer, evidence=self.EVIDENCE: unit_errors(answer, evidence)
+
+    def test_a_raw_fraction_with_a_percent_sign_is_an_error(self):
+        self.assertEqual(self.errors("Cost Efficiency: 14 points (TER of 0.0022%)"), ["0.0022%"])
+        # CSPX-LSE, as captured.
+        self.assertEqual(self.errors("TER at 0.0007%", '{"ter": 0.0007}'), ["0.0007%"])
+
+    def test_correct_renderings_are_not_errors(self):
+        for answer in (
+            "TER of 0.22%",
+            "TER of 0.2%",  # correct rounding
+            "a 0.22 percent TER",
+            "TER of 22 basis points",
+            "22 bps",
+            "top-10 concentration of 20%",
+            "90% data completeness",
+            "a TER above 0.10%",  # a threshold quoted from the evidence
+        ):
+            with self.subTest(answer=answer):
+                self.assertEqual(self.errors(answer), [])
+
+    def test_basis_points_written_as_the_percent_figure_are_an_error(self):
+        self.assertEqual(self.errors("TER of 0.22 basis points"), ["0.22 basis points"])
+
+    def test_an_unrelated_or_unknown_percentage_is_left_alone(self):
+        # Not this check's business: a figure that matches nothing is reported by
+        # ungrounded_numbers, not guessed at here.
+        self.assertEqual(self.errors("an expected 7% return"), [])
+        self.assertEqual(self.errors("3600 holdings"), [])
+
+    def test_a_unit_error_does_not_satisfy_a_completeness_term(self):
+        from evaluation.scorers import research_grounding_scores
+
+        expectations = {"required_term_groups": [["0.22", "22 basis", "0.0022"]]}
+
+        def facts(answer):
+            outputs = {
+                "answer": answer,
+                "tool_calls": [{"name": "get_research_context"}],
+                "tool_results": [{"name": "get_research_context", "result": self.EVIDENCE}],
+            }
+            return {f.name: f for f in research_grounding_scores(outputs, expectations)}
+
+        wrong = facts("TER of 0.0022%")
+        self.assertFalse(wrong["research_required_facts_present"].value)
+        self.assertFalse(wrong["research_units_correct"].value)
+        right = facts("TER of 0.22%")
+        self.assertTrue(right["research_required_facts_present"].value)
+        self.assertTrue(right["research_units_correct"].value)
+        # The raw fraction without a unit is still a valid way to state it.
+        self.assertTrue(facts("ter: 0.0022")["research_required_facts_present"].value)
+
+
+class GroundingDatasetDateTests(unittest.TestCase):
+    """The data_as_of expectation must accept the date however it is written.
+
+    On 2026-10-04 every grounding answer stated the date, but several wrote
+    "June 30, 2026" while the dataset accepted only "2026-06-30", so
+    research_required_facts_present counted a stated fact as missing. See
+    docs/EVALUATION_ANALYSIS.md.
+    """
+
+    def setUp(self):
+        import json
+
+        from evaluation.scorers import research_grounding_scores
+
+        self.cases = json.loads(
+            (ROOT / "evaluation/datasets/research_grounding.json").read_text(encoding="utf-8")
+        )
+        self.score = research_grounding_scores
+
+    def _facts_present(self, answer, expectations):
+        feedback = {f.name: f.value for f in self.score({"answer": answer, "tool_calls": [], "tool_results": []}, expectations)}
+        return feedback["research_required_facts_present"]
+
+    def _date_cases(self):
+        for case in self.cases:
+            expectations = case["expectations"]
+            groups = expectations.get("required_term_groups") or []
+            if any("2026-06-30" in group for group in groups):
+                yield case["inputs"]["case_id"], expectations, groups
+
+    def test_every_date_group_accepts_the_common_renderings(self):
+        cases = list(self._date_cases())
+        self.assertGreaterEqual(len(cases), 5)
+        for case_id, _, groups in cases:
+            date_group = next(group for group in groups if "2026-06-30" in group)
+            for rendering in ("2026-06-30", "June 30, 2026", "30 June 2026"):
+                with self.subTest(case=case_id, rendering=rendering):
+                    self.assertTrue(any(term.casefold() in rendering.casefold() for term in date_group))
+
+    def test_a_long_form_date_alone_satisfies_the_date_group_only(self):
+        # Every other group is satisfied verbatim; only the date is in long form.
+        for case_id, expectations, groups in self._date_cases():
+            others = " ".join(group[0] for group in groups if "2026-06-30" not in group)
+            with self.subTest(case=case_id):
+                self.assertTrue(self._facts_present(f"{others}. Data as of June 30, 2026.", expectations))
+                self.assertFalse(self._facts_present(f"{others}. Data as of June 30, 2025.", expectations))
+
 
 class MutationDetectionTests(unittest.TestCase):
     """A mutation must be detected from either the start or the end event.

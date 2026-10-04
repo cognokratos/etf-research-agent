@@ -3,8 +3,8 @@
 
 Why this exists
 ---------------
-``nemoguardrails`` 0.21 — the release ``nvidia-nat-security[guardrails]==1.8.0``
-pins — ships the actions behind our configured output rails with three defects
+``nemoguardrails`` 0.21 — the release ``nvidia-nat-security[guardrails]==1.9.0``
+pins, exactly as 1.8.0 did — ships the actions behind our configured output rails with three defects
 that make the rails unreliable on the *streaming* path:
 
 1. ``detect_regex_pattern`` (the ``regex check output`` rail) is declared without
@@ -36,7 +36,7 @@ that make the rails unreliable on the *streaming* path:
 All three are fixed upstream in ``nemoguardrails`` 0.23.0
 (``_regex_blocked_mapping`` + ``**kwargs`` in the actions; a defensive ``dict()``
 copy in ``get_action_details_from_flow_id`` and ``_prepare_params``). That
-release cannot be installed here: ``nvidia-nat-security[guardrails]==1.8.0``
+release cannot be installed here: ``nvidia-nat-security[guardrails]==1.9.0``
 requires ``nemoguardrails>=0.11,<0.22``, so 0.22.0 and 0.23.0 are both outside
 the supported dependency range.
 

@@ -202,6 +202,17 @@ this application's. Overridable without touching either:
 | `EVALUATION_MODEL_PREFIX` | how the deployed agent is grouped in MLflow |
 | `*_EVALUATION_EXPERIMENT` / `*_EVALUATION_DATASET` | per-suite MLflow names |
 | `EVALUATION_SYSTEM_PROMPT_NAME` / `EVALUATION_RAIL_PROMPT_NAME` | prompt-registry names |
+| `EVALUATION_PRINCIPAL` | the identity the harness asserts to the agent (default `evaluation-harness`) |
+
+The harness calls the agent directly rather than through the gateway, so no
+browser login stands behind it, and since NAT 1.9 the agent answers `401` to any
+request — the workflow and the `/version` provenance probe alike — that does not
+assert exactly one identity. A synthetic principal is used deliberately: an
+evaluation run is not a person, and neither traces nor the decision history
+should attribute machine traffic to a researcher. The read-only suites never
+reach an approval prompt (the client raises if one appears), so this principal
+never owns or answers one. See
+[SECURITY.md](SECURITY.md#the-agent-requires-an-asserted-identity).
 
 Case vocabulary belongs in the dataset — `required_term_groups`,
 `forbidden_assertions`, `forbidden_strings`, `expected_decision`,

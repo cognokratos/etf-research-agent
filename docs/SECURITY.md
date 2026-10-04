@@ -71,8 +71,8 @@ unauthenticated.
 
 `GET /version`, which reports the agent's build commit, prompt digests and model
 binding so an evaluation run can name what it measured, is deliberately **not**
-in that set: the evaluator already holds the service credential, so there is no
-reason to widen the unauthenticated surface. It returns digests only, never
+in that set: the evaluator already holds the service credential and asserts its
+synthetic principal, so there is no reason to widen the unauthenticated surface. It returns digests only, never
 prompt text — the system prompt forbids revealing hidden prompts, and an endpoint
 serving them would be the same disclosure from the other side.
 
@@ -87,6 +87,70 @@ The browser cannot choose `actor_id`. After authenticating the session, the
 gateway injects `x-authenticated-user-id` and `x-request-id`. The HITL function
 reads these from NAT request context and embeds them into the signed approval
 token. The MCP writes the signed identity and request ID into the history event.
+
+### The agent requires an asserted identity
+
+Two layers, because NAT's own one does not reach the client.
+
+`general.front_end.identity_header: x-authenticated-user-id` in
+`agent/config.yml` is NAT 1.9's supported way to consume an identity asserted by
+a trusted proxy. It resolves the header into a `UserInfo` and publishes it as
+`Context.user_id` — a `uuid5` pseudonym of the header value, not the value
+itself — which is what makes NAT's per-user span attribution possible.
+
+It is **not** what refuses a request that asserts nothing. NAT raises
+`IdentityHeaderError` and registers a handler that would turn it into a `401`,
+but `add_generate_routes` registers the workflow path and its `/stream` and
+`/full` variants with `enable_interactive=True` unconditionally — the
+`enable_interactive_extensions` setting only governs whether the
+`/executions/...` endpoints are mounted. The interactive runner acquires the
+session in a background task after the response has begun, inside a blanket
+`except Exception` that pushes the error into the stream body, so the caller
+would get `200` with a `WORKFLOW_ERROR` event.
+
+`RequireIdentityHeaderMiddleware` in `fastapi_worker.py` is therefore what
+actually enforces it: pure ASGI, directly inside the service-key check and ahead
+of NAT, requiring exactly one non-empty occurrence on every non-health route —
+the workflow, `/version` and the interaction-response route alike — and
+answering `401` otherwise.
+
+Both halves of the rule matter here more than in the template, because in this
+application the identity is what an approval is bound to:
+
+* **Missing.** Before 1.9, a caller holding the service credential could reach
+  the workflow with no identity at all. `approval._identity()` refused to mint a
+  token in that state, and that refusal was the only thing between an
+  unattributed request and an unattributed decision. It stays, as a second
+  layer that does not depend on middleware configured elsewhere.
+* **Repeated.** A repeated header is ambiguous, not a list. Accepting the first
+  occurrence would let anything able to append a header decide who the user is.
+  `ResponderIdentityMiddleware` applies the same exactly-once parser
+  (`interaction_guard._sole_identity_header`) to approval responses, so both
+  sides of the ownership check agree about the same request, and a response
+  carrying two identities resolves to *no* responder and is refused.
+
+Approval ownership is still compared on the **raw** header value on both sides,
+never on `Context.user_id` and never on anything the model supplies: the
+interaction-response route never enters NAT's session, so there is no
+NAT-resolved identity to read on the responder side, and the pseudonym is a pure
+function of the raw value anyway. None of this changes what a signed approval
+binds or what the MCP re-checks; it only closes the paths by which a request
+could reach that machinery without exactly one asserted identity.
+
+This does **not** replace the service credential, and enabling the header
+without one would be a mistake: a trusted identity header is only sound where
+untrusted clients cannot reach the server and the proxy strips any
+client-supplied value. `make auth-test` asserts the four cases independently
+against the running stack — no key, key without identity, key with a repeated
+identity, key with one identity — and `IdentityBoundaryTests` in
+`agent/verify_approval_tokens.py` asserts the same matrix offline, plus the
+repeated-responder refusal.
+
+Every direct caller therefore names itself. The gateway mints the header from
+the validated session; the evaluation harness and its `/version` probe assert a
+synthetic principal (`EVALUATION_PRINCIPAL`, default `evaluation-harness`),
+because an evaluation run is not a person and should not be recorded as one;
+`make trace-test` and `make verify-hitl` assert their own fixed test principals.
 
 ## Human-in-the-loop properties
 
@@ -249,8 +313,14 @@ controls keep credentials out of them:
 2. `SensitiveHeaderRedactionProcessor`, a NAT telemetry processor running ahead
    of OTLP conversion, applies an explicit deny-list (`authorization`, `cookie`,
    `set-cookie`, `x-api-key`, `api-key`, `x-auth-token`, `proxy-authorization`)
-   to every exported span. Correlation identifiers such as `x-request-id` and
-   `x-authenticated-user-id` are deliberately retained.
+   to every exported span. The correlation identifier `x-request-id` is
+   deliberately retained.
+
+The gateway's identity headers are not credentials but are personal:
+`UserIdentityProcessor` redacts `x-authenticated-user-id` and
+`x-authenticated-username` from span metadata in every mode, and exports NAT
+1.9's per-user pseudonym only when `OTEL_TRACE_USER_ID=true`. See
+[OBSERVABILITY.md](OBSERVABILITY.md#per-user-attribution).
 
 A credential therefore has to defeat two independent controls to be exported.
 Trace content is bounded by `NAT_TRACE_CONTENT_MAX_CHARS` and marked with

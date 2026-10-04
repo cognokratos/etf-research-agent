@@ -299,5 +299,117 @@ class UnexpectedInteractionTests(unittest.TestCase):
                     os.environ[key] = value
 
 
+class DirectCallerIdentityTests(unittest.TestCase):
+    """The harness calls NAT directly, so it must name itself, once.
+
+    Since NAT 1.9 the agent answers 401 to any non-health request that does not
+    carry exactly one non-empty ``x-authenticated-user-id``. No browser login
+    stands behind an evaluation run, so the harness asserts a *synthetic*
+    principal: machine traffic must never be attributed to a person. Both
+    direct callers are covered -- the workflow client and the ``/version``
+    provenance probe -- because both reach authenticated routes.
+    """
+
+    captured: list[dict] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def _record(self):
+            DirectCallerIdentityTests.captured.append(
+                {
+                    "path": self.path.split("?", 1)[0],
+                    "identities": self.headers.get_all("x-authenticated-user-id") or [],
+                    "authorization": self.headers.get("authorization"),
+                }
+            )
+
+        def do_GET(self):
+            self._record()
+            body = json.dumps({"available": True}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            self._record()
+            length = int(self.headers.get("content-length", "0"))
+            if length:
+                self.rfile.read(length)
+            # An interaction pause ends the call deterministically; only the
+            # request headers matter here.
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(
+                b'event: interaction_required\ndata: {"execution_id":"e","interaction_id":"i"}\n\n'
+            )
+            self.wfile.flush()
+
+        def log_message(self, format, *args):
+            return
+
+    def setUp(self):
+        DirectCallerIdentityTests.captured = []
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self._saved = {
+            key: os.environ.get(key)
+            for key in (
+                "AGENT_WORKFLOW_URL",
+                "AGENT_VERSION_URL",
+                "AGENT_API_KEY",
+                "EVALUATION_PRINCIPAL",
+                "EVALUATION_HTTP_MAX_ATTEMPTS",
+            )
+        }
+        os.environ["AGENT_WORKFLOW_URL"] = (
+            f"http://127.0.0.1:{self.server.server_address[1]}/v1/workflow/full"
+        )
+        os.environ.pop("AGENT_VERSION_URL", None)
+        os.environ["AGENT_API_KEY"] = "test-agent-api-key"
+        os.environ["EVALUATION_HTTP_MAX_ATTEMPTS"] = "1"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        for key, value in self._saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def _exercise_both_callers(self):
+        try:  # PyYAML is in the evaluator image, not on a bare host; the
+            import yaml  # noqa: F401  # /version probe never touches it.
+        except ModuleNotFoundError:  # pragma: no cover - host-only path
+            sys.modules.setdefault("yaml", types.ModuleType("yaml"))
+        from evaluation import provenance
+
+        with self.assertRaises(RuntimeError):
+            invoke_live_agent("Show VWCE-XETRA", "CASE-ID")
+        provenance.agent_identity(timeout=5)
+        return {entry["path"]: entry for entry in self.captured}
+
+    def test_both_callers_assert_the_synthetic_default_exactly_once(self):
+        os.environ.pop("EVALUATION_PRINCIPAL", None)
+        by_path = self._exercise_both_callers()
+        self.assertEqual(set(by_path), {"/v1/workflow/full", "/version"})
+        for path, entry in by_path.items():
+            self.assertEqual(entry["identities"], ["evaluation-harness"], path)
+            self.assertEqual(entry["authorization"], "Bearer test-agent-api-key", path)
+
+    def test_the_principal_is_configurable_and_blank_falls_back(self):
+        os.environ["EVALUATION_PRINCIPAL"] = "  nightly-ci  "
+        for entry in self._exercise_both_callers().values():
+            self.assertEqual(entry["identities"], ["nightly-ci"], entry["path"])
+
+        DirectCallerIdentityTests.captured = []
+        os.environ["EVALUATION_PRINCIPAL"] = "   "
+        for entry in self._exercise_both_callers().values():
+            # A blank principal is not an identity; the agent would refuse it.
+            self.assertEqual(entry["identities"], ["evaluation-harness"], entry["path"])
+
+
 if __name__ == "__main__":
     unittest.main()

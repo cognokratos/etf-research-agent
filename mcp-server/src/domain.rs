@@ -40,6 +40,102 @@ pub const SOURCE_TYPES: [&str; 5] = [
 pub const DEEP_LINK_SOURCE_TYPES: [&str; 3] =
     ["issuer_product_page", "issuer_factsheet", "issuer_kid"];
 
+/// Facts the engine stores and returns as *fractions*: `ter: 0.0022` is a 0.22%
+/// expense ratio. Every read model that carries one also carries a
+/// `<field>_percent` string beside it.
+///
+/// A bare fraction is not self-describing, and the model reading it was not
+/// told: on 2026-10-04 the agent wrote "TER of 0.0022%" in most answers that
+/// stated an expense ratio, telling an investor a fund costs a hundredth of what
+/// it does. The decision was never affected -- the engine scores the fraction --
+/// but the figure a person reads was wrong. The raw fraction stays, because the
+/// engine, the evaluation harness and existing clients read it; the display
+/// string is what an answer should quote.
+pub const RATE_FIELDS: [&str; 5] = [
+    "ter",
+    "top_10_concentration",
+    "tracking_difference_3y",
+    "volatility_3y",
+    "return_3y_annualized",
+];
+
+/// A fraction as the percentage a person reads: `0.0022` -> `"0.22%"`.
+///
+/// Formatted to at most four decimal places and trimmed, so binary-float noise
+/// (`0.0022 * 100 == 0.22000000000000003`) never reaches the text.
+pub fn percent_display(fraction: Option<f64>) -> Option<String> {
+    let value = fraction?;
+    if !value.is_finite() {
+        return None;
+    }
+    let formatted = format!("{:.4}", value * 100.0);
+    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
+    let trimmed = if trimmed == "-0" { "0" } else { trimmed };
+    Some(format!("{trimmed}%"))
+}
+
+/// Add `observed_percent` to every score factor whose `field` is a rate.
+///
+/// Applied at the output boundary rather than in the rules engine, so the
+/// engine's own output -- and the deterministic baseline generated from it --
+/// is unchanged. Additive and idempotent: nothing is removed or renamed.
+pub fn annotate_rates(value: Value) -> Value {
+    match value {
+        Value::Object(mut map) => {
+            let is_rate = map
+                .get("field")
+                .and_then(Value::as_str)
+                .is_some_and(|field| RATE_FIELDS.contains(&field));
+            if is_rate
+                && let Some(display) = percent_display(map.get("observed").and_then(Value::as_f64))
+            {
+                map.insert("observed_percent".to_owned(), Value::String(display));
+            }
+            Value::Object(map.into_iter().map(|(key, item)| (key, annotate_rates(item))).collect())
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(annotate_rates).collect()),
+        other => other,
+    }
+}
+
+/// The fund facts behind each score component, grouped from the engine's own
+/// matched rules.
+///
+/// `components` says how many points each component earned; nothing said *which
+/// facts about the fund* earned or lost them except a flat rule list the model
+/// had to join by hand. An explanation of "capped for profile fit" therefore
+/// depended on the model choosing to make that join, and on 2026-10-04 it
+/// stopped doing so: the IEAC-LSE answer stated the cap but no longer that the
+/// fund is a bond fund, which is the reason the cap applies. Grouping the same
+/// rules by component makes the evidence for each component a direct lookup.
+///
+/// A regrouping only -- every entry is a rule the engine already matched, with
+/// its field, observed value, the share of the rule's weight it earned, and its
+/// note, so this can explain a decision but has no way to change one. Components with no scorable metric have no entry; they are
+/// reported under `missing_data`.
+pub fn component_evidence(evaluation: &Evaluation) -> Value {
+    let mut grouped = serde_json::Map::new();
+    for rule in &evaluation.matched_rules {
+        let entry = grouped
+            .entry(rule.component.clone())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Value::Array(items) = entry {
+            items.push(json!({
+                "field": rule.field,
+                "observed": rule.observed,
+                // Whether this fact helped or hurt, from the engine itself: the
+                // share of the rule's weight it earned (1.0 full credit, 0.0
+                // none). Without it the note reads either way --
+                // "risk_tolerance=high against asset_class=bond" was explained
+                // as a good fit when the bond fund earned 0.1 of the rule.
+                "earned_fraction": rule.fraction,
+                "note": rule.note
+            }));
+        }
+    }
+    Value::Object(grouped)
+}
+
 /// One source the fixture cites for an ETF's reference data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataSource {
@@ -222,16 +318,24 @@ impl EtfRow {
             "distribution_policy": self.distribution_policy,
             "replication": self.replication,
             "ter": self.ter,
+            "ter_percent": percent_display(self.ter),
             "aum_usd": self.aum_usd,
             "fund_age_years": self.fund_age_years,
             "holdings_count": self.holdings_count,
             "top_10_concentration": self.top_10_concentration,
+            "top_10_concentration_percent": percent_display(self.top_10_concentration),
+            "units": "Rates (ter, top_10_concentration and the context-only figures) are \
+fractions: 0.0022 means 0.22%. Quote the matching *_percent field, never the fraction with \
+a percent sign.",
             // Contextual only. The deterministic policy never reads these, and
             // nothing in this system treats past performance as a forecast.
             "context_only_not_scored": {
                 "tracking_difference_3y": self.tracking_difference_3y,
+                "tracking_difference_3y_percent": percent_display(self.tracking_difference_3y),
                 "volatility_3y": self.volatility_3y,
+                "volatility_3y_percent": percent_display(self.volatility_3y),
                 "return_3y_annualized": self.return_3y_annualized,
+                "return_3y_annualized_percent": percent_display(self.return_3y_annualized),
                 "note": "Historical figures, shown for research context. They are not \
 inputs to the decision except where rules_spec.json names them, and they are never a \
 prediction of future return."
@@ -363,7 +467,7 @@ pub fn untrusted_free_text(etf: &EtfRow) -> Value {
 /// and it has to be in the shared model, because the resource view used to omit
 /// it and reopen the same gap.
 pub fn etf_read_model(etf: &EtfRow, evaluation: &Evaluation) -> Value {
-    json!({
+    annotate_rates(json!({
         "etf": etf.verified_facts(),
         "identity": {
             "etf_id": etf.etf_id,
@@ -386,7 +490,7 @@ until they do. The authoritative current result is under `current_evaluation`."
         "untrusted_free_text": untrusted_free_text(etf),
         "data_provenance": etf.provenance(),
         "current_evaluation": evaluation
-    })
+    }))
 }
 
 /// The compact form one ETF takes in a search result.
@@ -411,6 +515,7 @@ pub fn etf_search_model(etf: &EtfRow, evaluation: &Evaluation, other_listings: &
         "distribution_policy": etf.distribution_policy,
         "replication": etf.replication,
         "ter": etf.ter,
+        "ter_percent": percent_display(etf.ter),
         "fund_identity": etf.fund_identity(),
         // Same fund, other venues. Present so a caller can see that a result is
         // one economic candidate rather than assume it is one line of business.

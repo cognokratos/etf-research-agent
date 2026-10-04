@@ -10,6 +10,10 @@ verification, binding, lifetime ceiling, the transition policy — is tested by
 * which prompts a human is asked for, and when;
 * the interaction-ownership and offered-choice checks that close NAT's
   two-UUIDs-is-authorization gap;
+* the identity boundary in front of both: exactly one non-empty asserted
+  identity per request, enforced ahead of NAT (whose own 1.9 refusal does not
+  reach the client on the workflow routes) and applied identically to the
+  approval responder;
 * that cancellation mints nothing at all.
 
 Run inside the agent image::
@@ -58,11 +62,19 @@ from nat_streaming_react.approval import (  # noqa: E402
     prompt_text,
     required_prompts,
 )
+from nat_streaming_react.fastapi_worker import (  # noqa: E402
+    PUBLIC_PATHS,
+    RequireIdentityHeaderMiddleware,
+    StaticServiceKeyMiddleware,
+)
 from nat_streaming_react.interaction_guard import (  # noqa: E402
+    IDENTITY_HEADER,
     InteractionAuthorizationError,
     OfferedChoice,
     OwnerAwareExecutionStore,
+    ResponderIdentityMiddleware,
     _responder,
+    current_responder,
     prompt_offer,
     submitted_choice,
 )
@@ -686,6 +698,150 @@ class InteractionAuthorizationTests(unittest.TestCase):
     def test_submitted_choice_reads_id_and_value_as_one_pair(self):
         self.assertEqual(submitted_choice(_Response(_Option("research", "RESEARCH"))), OfferedChoice("research", "RESEARCH"))
         self.assertIsNone(submitted_choice(_Response(None)))
+
+
+class IdentityBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    """Exactly one asserted identity, or the request is not served.
+
+    Driven through the real middleware classes in the order
+    ``AuthenticatedFastApiFrontEndPluginWorker.build_app`` installs them
+    (service key outermost, then identity, then responder), over plain ASGI, so
+    the offline suite proves the same four cases ``make auth-test`` proves
+    against the running stack: no key, key without identity, key with a
+    repeated identity, and key with one identity.
+
+    NAT 1.9's own ``identity_header`` cannot be relied on for this: on the
+    workflow routes its refusal is caught by the interactive runner and turned
+    into a 200 response carrying a WORKFLOW_ERROR.
+    """
+
+    KEY = "an-offline-service-key"
+    HEADER = IDENTITY_HEADER.encode("ascii")
+
+    def _stack(self):
+        reached: list[str | None] = []
+
+        async def app(scope, receive, send):
+            # What an approval response handler would see as its responder.
+            reached.append(current_responder())
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"{}"})
+
+        inner = ResponderIdentityMiddleware(app)
+        identity = RequireIdentityHeaderMiddleware(inner, public_paths=PUBLIC_PATHS)
+        return StaticServiceKeyMiddleware(identity, api_key=self.KEY, public_paths=PUBLIC_PATHS), reached
+
+    async def _call(self, headers, path="/v1/workflow/full", scope_type="http"):
+        stack, reached = self._stack()
+        sent: list[dict] = []
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {"type": scope_type, "method": "POST", "path": path, "headers": headers}
+        await stack(scope, receive, send)
+        status = next((m["status"] for m in sent if m["type"] == "http.response.start"), None)
+        return status, reached
+
+    def _keyed(self, *identities: bytes):
+        headers = [(b"authorization", f"Bearer {self.KEY}".encode()), (b"content-type", b"application/json")]
+        return headers + [(self.HEADER, value) for value in identities]
+
+    async def test_no_service_key_is_refused_before_identity_is_considered(self):
+        status, reached = await self._call([(self.HEADER, b"researcher-1")])
+        self.assertEqual(status, 401)
+        self.assertEqual(reached, [])
+
+    async def test_a_keyed_request_with_no_identity_is_refused(self):
+        status, reached = await self._call(self._keyed())
+        self.assertEqual(status, 401)
+        self.assertEqual(reached, [], "the workflow must not run for an unattributed request")
+
+    async def test_an_empty_or_blank_identity_is_refused(self):
+        for blank in (b"", b"   "):
+            status, reached = await self._call(self._keyed(blank))
+            self.assertEqual(status, 401, blank)
+            self.assertEqual(reached, [])
+
+    async def test_a_repeated_identity_is_ambiguous_not_first_wins(self):
+        for values in ((b"researcher-1", b"researcher-2"), (b"researcher-1", b"researcher-1")):
+            status, reached = await self._call(self._keyed(*values))
+            self.assertEqual(status, 401, values)
+            self.assertEqual(reached, [])
+
+    async def test_header_name_matching_is_case_insensitive_for_repeats(self):
+        headers = self._keyed(b"researcher-1") + [(IDENTITY_HEADER.upper().encode(), b"researcher-2")]
+        status, reached = await self._call(headers)
+        self.assertEqual(status, 401)
+        self.assertEqual(reached, [])
+
+    async def test_one_identity_with_the_key_is_served_and_names_the_responder(self):
+        status, reached = await self._call(self._keyed(b"  researcher-1 "))
+        self.assertEqual(status, 200)
+        self.assertEqual(reached, ["researcher-1"])
+
+    async def test_the_interaction_response_route_is_covered_too(self):
+        path = "/executions/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/bbbb/response"
+        status, reached = await self._call(self._keyed(), path=path)
+        self.assertEqual(status, 401)
+        self.assertEqual(reached, [])
+        status, reached = await self._call(self._keyed(b"a", b"b"), path=path)
+        self.assertEqual(status, 401)
+
+    async def test_liveness_needs_neither_key_nor_identity(self):
+        for path in sorted(PUBLIC_PATHS):
+            status, _ = await self._call([], path=path)
+            self.assertEqual(status, 200, path)
+
+    async def test_version_requires_an_identity_like_every_other_route(self):
+        status, _ = await self._call(self._keyed(), path="/version")
+        self.assertEqual(status, 401)
+
+    async def test_a_repeated_responder_cannot_answer_an_owned_prompt(self):
+        """Defence in depth: even without the outer layer, ambiguity is not identity.
+
+        ResponderIdentityMiddleware alone must resolve a repeated header to "no
+        responder", so the owner check refuses rather than taking whichever
+        occurrence came first.
+        """
+
+        store = OwnerAwareExecutionStore(strict=False)
+        execution, interaction = "exec-1", "int-1"
+        store.record_owner_for_test(execution, ACTOR)
+        store.record_offer_for_test(
+            execution,
+            interaction,
+            frozenset({OfferedChoice("research", "research")}),
+            prompt_type="radio",
+        )
+        outcomes: list[str] = []
+
+        async def app(scope, receive, send):
+            try:
+                store.authorize(execution, interaction, _Response(_Option("research", "research")))
+                outcomes.append("authorized")
+            except InteractionAuthorizationError:
+                outcomes.append("refused")
+
+        middleware = ResponderIdentityMiddleware(app)
+
+        async def receive():  # pragma: no cover - never read
+            return {}
+
+        async def send(message):  # pragma: no cover - app sends nothing
+            pass
+
+        for values in ((ACTOR.encode(), b"intruder"), (b"intruder", ACTOR.encode())):
+            await middleware(
+                {"type": "http", "path": "/x", "headers": [(self.HEADER, v) for v in values]},
+                receive,
+                send,
+            )
+        await middleware({"type": "http", "path": "/x", "headers": [(self.HEADER, ACTOR.encode())]}, receive, send)
+        self.assertEqual(outcomes, ["refused", "refused", "authorized"])
 
 
 class RealExecutionStoreRoundTripTests(unittest.IsolatedAsyncioTestCase):

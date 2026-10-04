@@ -35,10 +35,13 @@ make eval-list
 make eval-all-allow-failures
 ```
 
-Use `make eval-all` for a strict regression gate. It **exits non-zero on the
-currently pinned model**: the `policy` gate sits at 0.4 because `qwen3:8b` does not
-reliably call the comparator, and that is published rather than tuned away. See
-[`../docs/EVALUATION_ANALYSIS.md`](../docs/EVALUATION_ANALYSIS.md).
+Use `make eval-all` for a strict regression gate: it exits non-zero while any
+gate is red. On the current build (NAT 1.9, `qwen3:8b`, measured 2026-10-04) all
+five gates are green, the variance-prone ones on three consecutive runs; earlier
+published results had `policy` at 0.4 on an older system prompt. The gates were
+not loosened to get there. See
+[`../docs/EVALUATION_ANALYSIS.md`](../docs/EVALUATION_ANALYSIS.md) for what the
+numbers mean and what they do not.
 
 Each suite logs to MLflow and writes `evaluation/results/<suite>-latest.json`.
 
@@ -79,7 +82,7 @@ Three further suites run outside MLflow; the first two need no LLM at all:
 
 | Suite | Command | What it asserts |
 |---|---|---|
-| Deterministic evaluation engine | `make rules-test` | 82 Rust tests against the shipped engine and the shipped ETF snapshot; also regenerates `results/deterministic-etf-baseline.json` |
+| Deterministic evaluation engine | `make rules-test` | 85 Rust tests against the shipped engine and the shipped ETF snapshot; also regenerates `results/deterministic-etf-baseline.json` |
 | Human-approval boundary | `make verify-approvals` | assertions against the real MCP mutation endpoint: token forgery, expiry, replay, payload binding, override rules, hard constraints, state preconditions |
 | Investor-initiated override | `make verify-hitl` | the confirmation gate end to end — a human *starting* a promotion, not ratifying one (needs a model) |
 

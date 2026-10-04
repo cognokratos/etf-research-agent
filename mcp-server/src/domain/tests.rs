@@ -251,3 +251,164 @@ fn stored_prose_is_boxed_away_from_computed_values() {
     assert_eq!(model["etf"].get("research_note"), None);
     assert_eq!(model["etf"].get("description"), None);
 }
+
+// ---------------------------------------------------------------------------
+// Rates carry their unit
+//
+// The engine stores rates as fractions. On 2026-10-04 the agent stated "TER of
+// 0.0022%" for a 0.22% expense ratio in most answers that gave one, because the
+// bare fraction was not self-describing. Every read model now carries a
+// `*_percent` string beside each rate.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_fraction_is_displayed_as_the_percentage_a_person_reads() {
+    for (fraction, expected) in [
+        (0.0022, "0.22%"),
+        (0.0007, "0.07%"),
+        (0.0003, "0.03%"),
+        (0.0085, "0.85%"),
+        (0.2, "20%"),
+        (0.36, "36%"),
+        (1.0, "100%"),
+        (-0.0012, "-0.12%"),
+        (0.0, "0%"),
+        (0.00012345, "0.0123%"),
+    ] {
+        assert_eq!(percent_display(Some(fraction)).as_deref(), Some(expected), "{fraction}");
+    }
+    assert_eq!(percent_display(None), None);
+    assert_eq!(percent_display(Some(f64::NAN)), None);
+}
+
+#[test]
+fn every_rate_in_the_read_model_has_its_percentage_beside_it() {
+    let etf = row("VWCE-XETRA");
+    let model = etf_read_model(&etf, &evaluate(&etf));
+    let facts = &model["etf"];
+    assert_eq!(facts["ter"], json!(0.0022), "the raw fraction stays for existing readers");
+    assert_eq!(facts["ter_percent"], json!("0.22%"));
+    assert_eq!(facts["top_10_concentration_percent"], json!("20%"));
+    assert!(facts["units"].as_str().unwrap().contains("0.0022 means 0.22%"));
+
+    // Structural, so a rate added later without its display string fails here.
+    for field in RATE_FIELDS {
+        let holder = if facts.get(field).is_some() { facts } else { &facts["context_only_not_scored"] };
+        assert!(holder.get(field).is_some(), "{field} is not in the read model");
+        let display = holder.get(format!("{field}_percent")).unwrap_or_else(|| panic!("{field}_percent missing"));
+        assert_eq!(*display, json!(percent_display(holder[field].as_f64())), "{field}");
+    }
+}
+
+#[test]
+fn a_score_factor_that_reports_a_rate_carries_its_percentage() {
+    let etf = row("VWCE-XETRA");
+    let model = etf_read_model(&etf, &evaluate(&etf));
+    let factors = model["current_evaluation"]["matched_rules"].as_array().unwrap();
+
+    let ter = factors.iter().find(|f| f["field"] == "ter").expect("a TER factor");
+    assert_eq!(ter["observed"], json!(0.0022), "the engine's own value is unchanged");
+    assert_eq!(ter["observed_percent"], json!("0.22%"));
+
+    for factor in factors {
+        let field = factor["field"].as_str().unwrap();
+        assert_eq!(
+            factor.get("observed_percent").is_some(),
+            RATE_FIELDS.contains(&field) && factor["observed"].is_number(),
+            "{field}: only rates gain a percentage, and every numeric rate does"
+        );
+    }
+}
+
+#[test]
+fn rate_annotation_is_additive_and_idempotent() {
+    let raw = json!({"matched_rules": [{"field": "ter", "observed": 0.0022}, {"field": "holdings_count", "observed": 3600.0}]});
+    let once = annotate_rates(raw.clone());
+    assert_eq!(annotate_rates(once.clone()), once);
+    assert_eq!(once["matched_rules"][0]["observed"], raw["matched_rules"][0]["observed"]);
+    assert!(once["matched_rules"][1].get("observed_percent").is_none());
+}
+
+#[test]
+fn a_search_result_carries_the_expense_ratio_as_a_percentage() {
+    let etf = row("VWCE-XETRA");
+    let result = etf_search_model(&etf, &evaluate(&etf), &[]);
+    assert_eq!(result["ter_percent"], json!("0.22%"));
+}
+
+// ---------------------------------------------------------------------------
+// Each component carries the fund facts behind it
+//
+// On 2026-10-04 the IEAC-LSE explanation stated the profile-fit cap but no
+// longer that the fund is a bond fund -- the reason the cap applies. The facts
+// were in the payload, but only as a flat rule list to be joined by hand.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn component_evidence_is_the_engines_own_rules_regrouped_for_every_fund() {
+    let (spec, profile) = (load_rules(), load_profile());
+    for seed in load_etfs() {
+        let evaluation = rules::evaluate(&spec, &profile, &seed.facts());
+        let evidence = component_evidence(&evaluation);
+        let groups = evidence.as_object().unwrap();
+
+        // Nothing added, nothing dropped: one entry per matched rule, under that
+        // rule's own component, with the engine's observed value and note.
+        let total: usize = groups.values().map(|items| items.as_array().unwrap().len()).sum();
+        assert_eq!(total, evaluation.matched_rules.len(), "{}", seed.etf_id);
+        for rule in &evaluation.matched_rules {
+            let items = groups[&rule.component].as_array().unwrap();
+            assert!(
+                items.iter().any(|item| item["field"] == rule.field
+                    && item["observed"] == rule.observed
+                    && item["earned_fraction"] == json!(rule.fraction)
+                    && item["note"] == rule.note),
+                "{}: {} / {} missing from component_evidence",
+                seed.etf_id,
+                rule.component,
+                rule.field
+            );
+        }
+
+        // Every component that was actually scored can be explained from its
+        // evidence; an unavailable one is reported under missing_data instead.
+        for breakdown in &evaluation.component_breakdown {
+            assert_eq!(
+                groups.contains_key(&breakdown.key),
+                !breakdown.unavailable,
+                "{}: {}",
+                seed.etf_id,
+                breakdown.key
+            );
+        }
+    }
+}
+
+#[test]
+fn the_profile_fit_evidence_for_a_bond_fund_names_its_asset_class() {
+    // The regression case. The implementation above is generic; this pins the
+    // fund the explanation was lost for.
+    let etf = row("IEAC-LSE");
+    let evaluation = evaluate(&etf);
+    assert!(
+        evaluation.applied_caps.iter().any(|cap| cap.code == "CAP-PROFILE-FIT"),
+        "precondition: IEAC-LSE is capped for profile fit"
+    );
+    assert!(evaluation.profile_fit.components.contains(&"risk_fit".to_owned()));
+
+    let evidence = annotate_rates(component_evidence(&evaluation));
+    let risk_fit = evidence["risk_fit"].as_array().expect("risk_fit evidence");
+    let asset_class = risk_fit
+        .iter()
+        .find(|item| item["field"] == "asset_class")
+        .expect("risk_fit evidence names the asset class");
+    assert_eq!(asset_class["observed"], json!("bond"));
+    assert!(asset_class["note"].as_str().unwrap().contains("asset_class=bond"));
+    // And which way it cut: a bond fund against a high risk tolerance earns
+    // little of that rule, which is why the profile-fit cap applies.
+    assert!(asset_class["earned_fraction"].as_f64().unwrap() < 0.5);
+
+    // Rates inside the evidence carry their unit, like everywhere else.
+    let ter = evidence["cost_efficiency"].as_array().unwrap().iter().find(|i| i["field"] == "ter").unwrap();
+    assert_eq!(ter["observed_percent"], json!("0.2%"));
+}

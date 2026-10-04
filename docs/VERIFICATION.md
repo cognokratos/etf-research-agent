@@ -132,6 +132,9 @@ transcript. Where a control cannot be checked automatically, it says so.
 | NAT cannot reach PostgreSQL directly | `network-test` |
 | Exact network membership matches the reviewed topology | `security-config-test` |
 | Unauthenticated gateway and NAT requests are refused | `auth-test` |
+| NAT refuses a keyed request asserting no identity, an empty one, or a repeated one — before the workflow runs | `auth-test` (live, four cases); `verify-approvals` (`IdentityBoundaryTests`, offline); wiring and middleware order by `security-config-test` |
+| A repeated identity on an approval response resolves to *no* responder, never the first occurrence | `verify-approvals` |
+| Every direct caller of NAT asserts a principal; the evaluator's is synthetic | `eval-test` / `eval-test-host` (`DirectCallerIdentityTests`), `security-config-test` |
 | MCP refuses a missing key and accepts the agent's | `verify-mcp` |
 | The credential is stripped before any handler or exporter sees it | `security-config-test`, plus the constant-time comparison test |
 | Login redirects carry PKCE, `state` and the exact callback | `auth-test` |
@@ -189,6 +192,8 @@ two UUIDs as authorization.
 | Credentials and private keys are blocked | `verify-output-guardrails`, `verify-rails` |
 | The output rail is not defeated by the upstream flow-parameter defect | `verify-rails` — asserts both the fix and the underlying defect |
 | The rail runs per request, not on a shared instance | `verify-output-guardrails`, `verify-rails` |
+| An oversized message is refused before the guard model, never truncated | `verify-input-guardrails` |
+| The guard model's Yes/No parser fails closed, with the `Not safe` hazard pinned | `verify-input-guardrails` |
 
 ## History and provenance
 
@@ -206,6 +211,7 @@ two UUIDs as authorization.
 |---|---|
 | Guardrails and NAT spans land in one trace | `verify-trace-pipeline`; `trace-test` end to end |
 | Credential headers are redacted before export | `verify-trace-pipeline`, `security-config-test` |
+| Per-user attribution is off by default; the raw gateway identity is withheld in both modes | `verify-trace-pipeline` |
 | Streaming is never delayed by telemetry capture | `security-config-test` — asserts capture happens *after* the chunk is yielded |
 | Numeric answer chunks survive the SSE wire | `verify-stream-adapter`, and the evaluator-side test |
 

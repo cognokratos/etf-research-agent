@@ -369,3 +369,15 @@ fn requesting_every_listing_is_opt_in_and_reports_both() {
         "include_all_listings must be able to return more rows than the grouped default"
     );
 }
+
+#[test]
+fn research_context_asks_for_the_facts_behind_components_and_caps() {
+    let elements = RESEARCH_CONTEXT_REQUIRED_ELEMENTS.join("\n");
+    assert!(elements.contains("deterministic_conclusions.component_evidence"));
+    assert!(elements.contains("profile_fit.components"));
+    assert!(elements.contains("earned_fraction"), "an answer must say whether a fact helped or hurt");
+    // Earlier requirements are kept, not replaced.
+    assert!(elements.contains("*_percent"));
+    assert!(elements.contains("data_as_of"));
+    assert!(elements.contains("hard constraint or policy cap"));
+}

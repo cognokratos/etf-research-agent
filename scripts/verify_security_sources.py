@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -16,6 +17,54 @@ def require(condition: bool, message: str) -> None:
 
 def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _calls_in(node: ast.AST, name: str) -> bool:
+    """Whether ``node`` contains a call to a function or method named ``name``."""
+
+    for call in ast.walk(node):
+        if isinstance(call, ast.Call):
+            target = call.func
+            called = target.id if isinstance(target, ast.Name) else getattr(target, "attr", None)
+            if called == name:
+                return True
+    return False
+
+
+def _class(tree: ast.Module, name: str) -> ast.ClassDef | None:
+    return next(
+        (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name),
+        None,
+    )
+
+
+def _middleware_order(worker_tree: ast.Module) -> list[str]:
+    """Middleware classes passed to ``app.add_middleware`` in ``build_app``, in call order.
+
+    Starlette wraps in reverse, so the *last* one added is outermost.
+    """
+
+    worker_class = _class(worker_tree, "AuthenticatedFastApiFrontEndPluginWorker")
+    build_app = next(
+        (
+            node
+            for node in (worker_class.body if worker_class else ())
+            if isinstance(node, ast.FunctionDef) and node.name == "build_app"
+        ),
+        None,
+    )
+    if build_app is None:
+        return []
+    order: list[str] = []
+    for call in ast.walk(build_app):
+        if (
+            isinstance(call, ast.Call)
+            and getattr(call.func, "attr", None) == "add_middleware"
+            and call.args
+            and isinstance(call.args[0], ast.Name)
+        ):
+            order.append((call.lineno, call.args[0].id))
+    return [name for _, name in sorted(order)]
 
 
 def main() -> None:
@@ -130,11 +179,74 @@ def main() -> None:
         "StaticServiceKeyMiddleware" in worker and "WorkflowTraceContextMiddleware" in worker,
         "the NAT worker does not install both the auth and trace middleware",
     )
+    # Two questions, two layers: "is this the gateway" and "who is it acting
+    # for". NAT 1.9's own identity_header refusal does not reach the client on
+    # the workflow routes (its interactive runner swallows the error into a 200
+    # response body), so this middleware is what makes the second one real.
+    require(
+        "RequireIdentityHeaderMiddleware" in worker,
+        "the NAT worker does not require an asserted identity on non-health routes",
+    )
+    agent_config = text("agent/config.yml")
     require(
         "nat_streaming_react.fastapi_worker.AuthenticatedFastApiFrontEndPluginWorker"
-        in text("agent/config.yml"),
+        in agent_config,
         "config.yml does not select the authenticated NAT front-end worker",
     )
+    # Not the enforcement point, but what populates Context.user_id, and so
+    # what the per-user span attribution switch governs. Anchored to the
+    # front_end block's indentation so a commented-out line does not count.
+    require(
+        re.search(r"^    identity_header: x-authenticated-user-id\s*$", agent_config, re.MULTILINE)
+        is not None,
+        "config.yml no longer tells NAT which header carries the asserted identity",
+    )
+
+    # Installed, not merely defined, and in the right order: the service key
+    # outermost (added last), the identity requirement directly inside it, and
+    # the responder record innermost so it only ever sees vouched-for requests.
+    order = _middleware_order(ast.parse(worker))
+    for required in (
+        "StaticServiceKeyMiddleware",
+        "RequireIdentityHeaderMiddleware",
+        "ResponderIdentityMiddleware",
+    ):
+        require(required in order, f"build_app no longer installs {required}")
+    require(
+        order.index("ResponderIdentityMiddleware")
+        < order.index("RequireIdentityHeaderMiddleware")
+        < order.index("StaticServiceKeyMiddleware"),
+        f"NAT middleware order changed ({order}); the service key must be outermost, "
+        "then the identity requirement, then the responder record",
+    )
+
+    # One parsing rule for both sides of the boundary: exactly one non-empty
+    # occurrence. A first-occurrence-wins loop would let anything able to append
+    # a header choose who the user -- or the approval responder -- is.
+    guard_tree = ast.parse(text("agent/src/nat_streaming_react/interaction_guard.py"))
+    sole = next(
+        (
+            node
+            for node in guard_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_sole_identity_header"
+        ),
+        None,
+    )
+    require(sole is not None, "the exactly-once identity parser is missing")
+    require(
+        "len(values) != 1" in ast.unparse(sole),
+        "the identity parser no longer refuses a repeated header",
+    )
+    for owner_tree, class_name in (
+        (ast.parse(worker), "RequireIdentityHeaderMiddleware"),
+        (guard_tree, "ResponderIdentityMiddleware"),
+    ):
+        cls = _class(owner_tree, class_name)
+        require(cls is not None, f"{class_name} is missing")
+        require(
+            _calls_in(cls, "_sole_identity_header"),
+            f"{class_name} no longer uses the exactly-once identity parser",
+        )
 
     # The MCP server reads its configuration in `main.rs` and serves its HTTP
     # surface from `http.rs`, so the credential checks live in the latter. The
@@ -198,6 +310,27 @@ def main() -> None:
 
     evaluator = text("evaluation/client.py")
     require("AGENT_API_KEY" in evaluator, "evaluator does not require the NAT key")
+
+    # Every direct caller of NAT asserts a principal; without one it is refused
+    # (and must be). The evaluation harness asserts a *synthetic* one, so machine
+    # traffic is never attributed to a person. Provenance reads /version, which
+    # is authenticated like every other non-health route.
+    for caller in ("evaluation/client.py", "evaluation/provenance.py"):
+        source = text(caller)
+        require(
+            '"x-authenticated-user-id"' in source and "EVALUATION_PRINCIPAL" in source,
+            f"{caller} no longer asserts the evaluation principal to the agent",
+        )
+    require(
+        re.search(r"EVALUATION_PRINCIPAL:\s*\$\{EVALUATION_PRINCIPAL:-evaluation-harness\}", text("docker-compose.yml"))
+        is not None,
+        "the evaluator no longer defaults to the synthetic evaluation-harness principal",
+    )
+    for caller in ("scripts/verify_traces_e2e.py", "agent/verify_hitl_override.py"):
+        require(
+            "x-authenticated-user-id" in text(caller),
+            f"{caller} calls NAT directly without asserting an identity",
+        )
 
     # Every guardrail decision event the agent emits must be one the evaluator
     # recognises. These are magic strings shared across two deployed codebases,

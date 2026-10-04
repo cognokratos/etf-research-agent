@@ -23,8 +23,8 @@ use sqlx::PgPool;
 
 use crate::approval::ApprovalVerifier;
 use crate::domain::{
-    etf_read_model, etf_search_model, policy_generations, untrusted_free_text, EtfRow,
-    REVIEW_STATES,
+    component_evidence, etf_read_model, etf_search_model, policy_generations,
+    untrusted_free_text, EtfRow, REVIEW_STATES,
 };
 use crate::rules::{self, Evaluation, InvestorProfile, RulesSpec, DECISIONS};
 use crate::store::{self, AuditEvent, EtfFilters, EtfHistory};
@@ -152,8 +152,27 @@ fn tool_error(message: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.into())])
 }
 
+/// What an explanation from `get_research_context` must contain.
+///
+/// The second and fourth entries ask for the *facts* behind a component or a
+/// cap, not only its name: naming "risk_fit" and "CAP-PROFILE-FIT" without
+/// saying the fund is a bond fund held against a high risk tolerance states the
+/// decision without explaining it. Those facts come from `component_evidence`,
+/// which is the engine's own matched rules grouped by component.
+pub(crate) const RESEARCH_CONTEXT_REQUIRED_ELEMENTS: [&str; 7] = [
+    "The etf_id, the ticker and the fund name.",
+    "The deterministic decision and the investment score, stated explicitly as the rules engine's determination.",
+    "The score components that drove the result, named from deterministic_conclusions.components, each with the fund facts behind it from deterministic_conclusions.component_evidence: the field, its observed value, and whether it earned or lost points according to earned_fraction (1 is full credit, 0 is none).",
+    "Any hard constraint or policy cap that applied, what it means, and the fund facts that triggered it; for a profile-fit cap, the component_evidence of the components listed in profile_fit.components.",
+    "Any missing metric, and the effect it had on the decision.",
+    "Any rate quoted from its *_percent field (ter_percent, observed_percent), never as the raw fraction with a percent sign.",
+    "The data_as_of date whenever recency is relevant to the claim being made.",
+];
+
+/// Every tool result leaves through here, so every score factor that reports a
+/// rate gains its display percentage. See [`crate::domain::annotate_rates`].
 fn tool_json(value: Value) -> CallToolResult {
-    CallToolResult::success(vec![ContentBlock::text(value.to_string())])
+    CallToolResult::success(vec![ContentBlock::text(crate::domain::annotate_rates(value).to_string())])
 }
 
 fn invalid_params(message: String) -> McpError {
@@ -666,6 +685,7 @@ approved. Call evaluate_etf or get_etf for the full component breakdown."
                 "decision": evaluation.decision,
                 "score_decision": evaluation.score_decision,
                 "components": evaluation.components,
+                "component_evidence": component_evidence(&evaluation),
                 "matched_rules": evaluation.matched_rules,
                 "hard_constraints": evaluation.hard_constraints,
                 "applied_caps": evaluation.applied_caps,
@@ -682,14 +702,7 @@ approved. Call evaluate_etf or get_etf for the full component breakdown."
             // produces an incomplete answer, because nothing asked for the
             // deterministic result. Stating the required elements is the
             // counterpart to stating the forbidden ones.
-            "required_elements": [
-                "The etf_id, the ticker and the fund name.",
-                "The deterministic decision and the investment score, stated explicitly as the rules engine's determination.",
-                "The score components that drove the result, named from deterministic_conclusions.components.",
-                "Any hard constraint or policy cap that applied, and what it means.",
-                "Any missing metric, and the effect it had on the decision.",
-                "The data_as_of date whenever recency is relevant to the claim being made."
-            ],
+            "required_elements": RESEARCH_CONTEXT_REQUIRED_ELEMENTS,
             "explanation_constraints": [
                 "Use only verified_metrics and deterministic_conclusions for factual claims.",
                 "Do not assert returns, yields, holdings, sector or country exposures, fees, issuer facts or risk statistics that are not present here.",

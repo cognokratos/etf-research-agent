@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-08-13T21:35:44.181969+00:00",
+  "generated_at": "2026-10-04T20:01:10.068298+00:00",
   "mode": "live-agent",
   "suite": "policy",
   "experiment": "etf-decision-policy",
   "dataset": "etf-decision-policy-cases",
-  "dataset_id": "d-7aa02cc80a294e6eb3496cb5e2aabfd4",
+  "dataset_id": "d-7ed5fc5b188040b684449f85403429eb",
   "record_count": 5,
-  "run_id": "6f7b54e2f09b46cea392cb9dca2b2404",
+  "run_id": "99961f78da6944008dff9053821bcf3f",
   "required_metric": "decision_policy_correct/mean",
-  "required_value": 0.4,
+  "required_value": 1.0,
   "fail_threshold": 1.0,
-  "passed": false,
+  "passed": true,
   "provenance": {
     "agent": {
       "available": true,
@@ -18,9 +18,10 @@
       "guard_model": "qwen3:8b",
       "reasoning_effort": "none",
       "guard_reasoning_effort": "none",
-      "build_commit": "312c1ab1180a5f59be9fc439207868fb3e2e4d74",
-      "config_sha256": "f6547765c6b78615a30b0aa28f49cc13bfd6862da70fa619be90c5919c5bd429",
-      "prompt_sha256": "c50966b65eb7e9533188dbaeba079344fb80eb42cd3dabeb63c81d16bf56638a",
+      "build_commit": "34104f2e55ebff35932b469d7b13887d07667e45",
+      "config_path": "/app/config.yml",
+      "config_sha256": "3c34e023632ae8a7b031c4c1ae00d2c84b312255c768cadb2358dcec4fc14e60",
+      "prompt_sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
       "guardrails_prompts_sha256": "957a8d87fea2b2413feae4a2b429f22bb052b13b3bd3b57a4bf1569a8763ccbb",
       "tools_exposed": [
         "evaluate_etf",
@@ -32,19 +33,19 @@
       ]
     },
     "harness": {
-      "git_commit": "312c1ab1180a5f59be9fc439207868fb3e2e4d74",
+      "git_commit": "34104f2e55ebff35932b469d7b13887d07667e45",
       "source": "git",
       "dirty": false
     },
     "prompts": [
       {
-        "name": "etf-research-agent-system-prompt",
+        "name": "agent-system-prompt",
         "version": "1",
         "registered": false,
         "linked": true
       },
       {
-        "name": "etf-research-guardrail-input-rail",
+        "name": "agent-guardrail-input-rail",
         "version": "1",
         "registered": false,
         "linked": true
@@ -58,24 +59,24 @@
     "consistent": true
   },
   "metrics": {
-    "decision_policy_correct/mean": 0.4,
-    "decision_relationship_correct/mean": 0.4,
+    "decision_policy_correct/mean": 1.0,
+    "decision_relationship_correct/mean": 1.0,
     "llm_policy_validity_correct/mean": 1.0,
-    "rules_win_by_default_correct/mean": 0.4,
-    "policy_stated_effective_decision/mean": 0.4,
+    "rules_win_by_default_correct/mean": 1.0,
+    "policy_stated_effective_decision/mean": 1.0,
     "policy_no_contradiction/mean": 1.0,
     "policy_no_forecast_claim/mean": 1.0,
     "policy_no_misattributed_etf/mean": 1.0,
     "policy_read_only/mean": 1.0,
-    "latency_ms/mean": 7633.150200000001
+    "latency_ms/mean": 23713.553
   },
   "latency": {
     "count": 5,
-    "min_ms": 398.4,
-    "p50_ms": 549.0,
-    "p95_ms": 19357.6,
-    "max_ms": 19357.6,
-    "mean_ms": 7633.2,
-    "note": "End-to-end, question in to final token out, on the pinned local model."
+    "min_ms": 16303.8,
+    "p50_ms": 18218.7,
+    "p95_ms": 33848.4,
+    "max_ms": 33848.4,
+    "mean_ms": 23713.6,
+    "note": "End-to-end, question in to final token out, on the configured model."
   }
 }

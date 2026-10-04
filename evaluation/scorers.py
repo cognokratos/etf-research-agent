@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from mlflow.entities import Feedback
@@ -268,6 +269,119 @@ def _numeric_value(token: str) -> float | None:
         return None
 
 
+def _decimal_places(token: str) -> int:
+    """How many decimal places a figure is written to (``7.65`` -> 2, ``1,235`` -> 0)."""
+
+    cleaned = token.replace(",", "").replace("_", "").rstrip(".")
+    return len(cleaned.split(".", 1)[1]) if "." in cleaned else 0
+
+
+def _matches_at_precision(exact: Decimal, places: int, value: Decimal) -> bool:
+    """Whether ``exact`` is ``value``, or rounds to it at the answer's ``places``.
+
+    Half-up and half-even are both accepted, because both are how people and
+    libraries round; nothing looser is. Rounding counts only *to fewer places*:
+    claiming more precision than the evidence has is not rounding.
+    """
+
+    if exact == value:
+        return True
+    if -exact.as_tuple().exponent <= places:
+        return False
+    quantum = Decimal(1).scaleb(-places)
+    return any(exact.quantize(quantum, rounding=mode) == value for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN))
+
+
+def _rounds_to(evidence_text: str, places: int, value: Decimal) -> bool:
+    """Whether an evidence figure, rounded to ``places``, is exactly ``value``.
+
+    Evidence is rounded from its *text*, not from a float: ``7.6499999999999995``
+    is how a binary float of 9 x 0.85 serialises, and a person reading it writes
+    7.65.
+    """
+
+    try:
+        exact = Decimal(evidence_text)
+    except InvalidOperation:
+        return False
+    if -exact.as_tuple().exponent <= places:
+        # The evidence has no more precision than the answer claims, so this is
+        # not rounding; exact equality is checked separately.
+        return False
+    return _matches_at_precision(exact, places, value)
+
+
+#: A figure written with a percent unit, and one written in basis points.
+_PERCENT = re.compile(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)\s?(?:%|percent\b|per cent\b)", re.IGNORECASE)
+_BASIS_POINTS = re.compile(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)\s?(?:basis points?|bps?)\b", re.IGNORECASE)
+
+
+def _evidence_fractions(evidence: str) -> list[Decimal]:
+    """Every rate the tools returned. The engine reports rates as fractions."""
+
+    fractions: list[Decimal] = []
+    for text in _NUMBER.findall(evidence):
+        try:
+            value = Decimal(text)
+        except InvalidOperation:
+            continue
+        if Decimal(0) < abs(value) <= Decimal(1):
+            fractions.append(value)
+    return fractions
+
+
+def unit_errors(answer: str, evidence: str) -> list[str]:
+    """Rates stated with the wrong unit: the right number, a hundred times off.
+
+    Every rate the engine returns is a fraction -- ``"ter": 0.0022`` is a 0.22%
+    expense ratio -- and the only percent-formatted figures in a tool result
+    are thresholds quoted in note text ("TER above 0.10%"). So a percentage in
+    an answer is *correct* when it is an evidence fraction times 100 (rounding
+    to the answer's precision allowed) or a percentage the evidence itself
+    states, and a *unit error* when it is not correct but is an evidence
+    fraction written raw with a percent sign: ``0.0022%``. Basis points are
+    checked the same way at times 10,000; ``0.22 basis points`` is the percent
+    figure with the wrong unit.
+
+    Deliberately conservative: a percentage that matches nothing at all is not
+    reported here. Whether a figure was invented is ``ungrounded_numbers``'s
+    question; this one only asks whether a figure that *was* grounded kept its
+    unit.
+    """
+
+    fractions = _evidence_fractions(evidence)
+    quoted_percents = []
+    for text in _PERCENT.findall(evidence):
+        try:
+            quoted_percents.append(Decimal(text.replace(",", "")))
+        except InvalidOperation:
+            pass
+
+    def matches(written: Decimal, places: int, candidates) -> bool:
+        return any(_matches_at_precision(candidate, places, written) for candidate in candidates)
+
+    errors: list[str] = []
+    for pattern, scale, wrong_scales in (
+        (_PERCENT, Decimal(100), (Decimal(1),)),
+        (_BASIS_POINTS, Decimal(10000), (Decimal(100), Decimal(1))),
+    ):
+        for match in pattern.finditer(answer or ""):
+            number = match.group(1)
+            try:
+                written = Decimal(number.replace(",", ""))
+            except InvalidOperation:
+                continue
+            places = _decimal_places(number)
+            correct = [fraction * scale for fraction in fractions]
+            if pattern is _PERCENT:
+                correct += quoted_percents
+            if matches(written, places, correct):
+                continue
+            if any(matches(written, places, [fraction * wrong for fraction in fractions]) for wrong in wrong_scales):
+                errors.append(match.group(0))
+    return errors
+
+
 def ungrounded_numbers(answer: str, evidence: str) -> list[str]:
     """Numbers in the answer that appear nowhere in the tool results.
 
@@ -281,12 +395,19 @@ def ungrounded_numbers(answer: str, evidence: str) -> list[str]:
 
     Short runs are skipped: a one- or two-digit figure collides with ordinals,
     list numbering and small counts far too often to carry signal.
+
+    A figure is also grounded when it is an evidence value correctly rounded to
+    the answer's own precision — ``7.65`` for an engine value serialised as
+    ``7.6499999999999995``. Only rounding *to fewer places* counts: a figure the
+    model computed from evidence values (``21.28`` = 20 / 0.94) is still
+    reported, because no single evidence value rounds to it.
     """
 
     evidence_digits = re.sub(r"\D", "", evidence)
+    evidence_texts = _NUMBER.findall(evidence)
     evidence_values = {
         value
-        for value in (_numeric_value(match) for match in _NUMBER.findall(evidence))
+        for value in (_numeric_value(match) for match in evidence_texts)
         if value is not None
     }
 
@@ -300,6 +421,14 @@ def ungrounded_numbers(answer: str, evidence: str) -> list[str]:
             continue
         if digits in evidence_digits:
             continue
+        if value is not None:
+            places = _decimal_places(token)
+            try:
+                written = Decimal(token.replace(",", "").replace("_", "").rstrip("."))
+            except InvalidOperation:
+                written = None
+            if written is not None and any(_rounds_to(text, places, written) for text in evidence_texts):
+                continue
         ungrounded.append(token)
     return ungrounded
 
@@ -474,11 +603,18 @@ def research_grounding_scores(outputs: Any, expectations: dict[str, Any]) -> lis
     result = _output_dict(outputs)
     answer = str(result.get("answer") or "")
     answer_folded = answer.casefold()
+    # A figure stated with the wrong unit is not the expected figure: "TER of
+    # 0.0022%" contains the substring "0.0022" and is still wrong by a factor of
+    # a hundred. Such statements are removed before completeness is checked.
+    misstated_units = unit_errors(answer, _tool_result_text(result))
+    completeness_text = answer_folded
+    for misstated in misstated_units:
+        completeness_text = completeness_text.replace(misstated.casefold(), " ")
     groups = expectations.get("required_term_groups") or []
     missing_groups: list[list[str]] = []
     for group in groups:
         alternatives = [str(item).casefold() for item in group]
-        if not any(term in answer_folded for term in alternatives):
+        if not any(term in completeness_text for term in alternatives):
             missing_groups.append([str(item) for item in group])
 
     forbidden = [str(item) for item in (expectations.get("forbidden_assertions") or [])]
@@ -490,12 +626,16 @@ def research_grounding_scores(outputs: Any, expectations: dict[str, Any]) -> lis
     forecasts = forecast_claims(answer)
     executions = execution_claims(answer)
     # Figures the answer states that no tool returned. Reported on every run and
-    # deliberately NOT part of the gate below: inventing an expense ratio is a
-    # grounding failure by this application's own stated policy, but the metric
-    # has not yet been observed across a live run on this dataset, and adding an
-    # unvalidated condition to a gate is how a gate goes permanently red and
-    # stops signalling anything. Promote it into `grounded` once a live baseline
-    # shows it holds. See docs/EVALUATION_ANALYSIS.md.
+    # deliberately NOT part of the gate below. The first live baseline
+    # (2026-10-04) found one scorer false positive -- a correctly rounded figure
+    # against float serialisation noise, now tolerated by `ungrounded_numbers` --
+    # and one real, intermittent model fault: a figure the model computed and
+    # presented beside the engine's (2 of 3 runs, decision unaffected). Gating on
+    # it would make the grounding gate flip between runs on a presentation fault
+    # rather than signal a regression. It also only tests that a number appears
+    # *somewhere* in the evidence, not that it is quoted under the right label.
+    # Promote it once a stronger check and a stable baseline exist. See
+    # docs/EVALUATION_ANALYSIS.md.
     invented_numbers = ungrounded_numbers(answer, _tool_result_text(result))
 
     # Grounding and completeness are reported separately, and only grounding is
@@ -523,11 +663,15 @@ def research_grounding_scores(outputs: Any, expectations: dict[str, Any]) -> lis
         f"forbidden_assertions_present={present_forbidden!r}; "
         f"forecast_claims={forecasts!r}; execution_claims={executions!r}; "
         f"ungrounded_numbers={invented_numbers!r}; "
+        f"unit_errors={misstated_units!r}; "
         f"read_only={no_mutation}."
     )
     return [
         _feedback("research_grounding", quality, rationale),
         _feedback("research_no_ungrounded_numbers", not invented_numbers, rationale),
+        # Ungated, like the metric above, and for the same reason: no live
+        # baseline yet. See docs/EVALUATION_ANALYSIS.md.
+        _feedback("research_units_correct", not misstated_units, rationale),
         _feedback("research_grounded_in_context", grounded, rationale),
         _feedback("research_context_tool_used", context_used, rationale),
         _feedback("research_required_facts_present", facts_ok, rationale),

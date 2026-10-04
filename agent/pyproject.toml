@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nat-streaming-react"
-version = "0.1.9"
-description = "ETF research ReAct workflow: deterministic evaluation over MCP tools, per-action human-approval boundary, text-aware streaming Guardrails, and unified MLflow/OpenTelemetry tracing for NeMo Agent Toolkit 1.8"
+version = "0.2.0"
+description = "ETF research ReAct workflow: deterministic evaluation over MCP tools, per-action human-approval boundary, text-aware streaming Guardrails, and unified MLflow/OpenTelemetry tracing, trusted-identity enforcement and a bounded guard-model input for NeMo Agent Toolkit 1.9"
 requires-python = ">=3.11,<3.14"
 dependencies = []
 
