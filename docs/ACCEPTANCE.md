@@ -34,12 +34,12 @@ These need Docker. The first three need no model.
 
 | Area | Command |
 |---|---|
-| Human-approval boundary | `make verify-approvals` — 32 assertions against the real MCP mutation endpoint |
+| Human-approval boundary | `make verify-approvals` — 61 offline tests of the agent half (minting, ownership, offered choices, identity); the MCP verifier half is `make verify-approvals-rust` |
 | Compose topology, isolation, auth, MCP key | `make security-test` |
 | Observability pipeline | `make verify-trace-pipeline` |
 | Guardrail rails, live | `make verify-guardrails` — needs a model |
 | Human-initiated override, end to end | `make verify-hitl` — needs a model |
-| Five live evaluation suites | `make eval-all` — needs a model, and **exits non-zero while the policy gate is red** |
+| Five live evaluation suites | `make eval-all` — needs a model; all five gates green on the NAT 1.9 build as of 2026-10-04 (see [`EVALUATION_ANALYSIS.md`](EVALUATION_ANALYSIS.md)) |
 
 ## Not verified
 

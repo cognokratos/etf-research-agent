@@ -491,11 +491,13 @@ def research_grounding_scores(outputs: Any, expectations: dict[str, Any]) -> lis
     executions = execution_claims(answer)
     # Figures the answer states that no tool returned. Reported on every run and
     # deliberately NOT part of the gate below: inventing an expense ratio is a
-    # grounding failure by this application's own stated policy, but the metric
-    # has not yet been observed across a live run on this dataset, and adding an
-    # unvalidated condition to a gate is how a gate goes permanently red and
-    # stops signalling anything. Promote it into `grounded` once a live baseline
-    # shows it holds. See docs/EVALUATION_ANALYSIS.md.
+    # grounding failure by this application's own stated policy, but the first
+    # live baseline (2026-10-04) shows it does not yet hold for a reason that is
+    # not the model's: exact value comparison flags a correctly rounded figure
+    # (``7.65`` against an engine value serialised as ``7.6499999999999995``) on
+    # every run. Adding that to a gate would pin it red on a serialisation
+    # artifact. Promote it into `grounded` once rounding is tolerated here or the
+    # engine stops emitting float noise. See docs/EVALUATION_ANALYSIS.md.
     invented_numbers = ungrounded_numbers(answer, _tool_result_text(result))
 
     # Grounding and completeness are reported separately, and only grounding is

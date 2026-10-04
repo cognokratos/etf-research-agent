@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-08-13T21:37:48.230539+00:00",
+  "generated_at": "2026-10-04T15:25:04.924483+00:00",
   "mode": "live-agent",
   "suite": "grounding",
   "experiment": "etf-research-grounding",
   "dataset": "etf-research-grounding-cases",
-  "dataset_id": "d-0da7d549a62c4ec18ae9013a5aef986a",
+  "dataset_id": "d-6998661dade74a898ecd0c28395f1e52",
   "record_count": 6,
-  "run_id": "fd4c5e2affe847b7aee3e2958249b3b0",
+  "run_id": "567949a4dc7e4379b2d20a1a96de8bc5",
   "required_metric": "research_grounding/mean",
   "required_value": 1.0,
   "fail_threshold": 1.0,
@@ -18,9 +18,10 @@
       "guard_model": "qwen3:8b",
       "reasoning_effort": "none",
       "guard_reasoning_effort": "none",
-      "build_commit": "312c1ab1180a5f59be9fc439207868fb3e2e4d74",
-      "config_sha256": "f6547765c6b78615a30b0aa28f49cc13bfd6862da70fa619be90c5919c5bd429",
-      "prompt_sha256": "c50966b65eb7e9533188dbaeba079344fb80eb42cd3dabeb63c81d16bf56638a",
+      "build_commit": "66a73581bf3924413b13d25e6cca743b1bcb1735",
+      "config_path": "/app/config.yml",
+      "config_sha256": "3c34e023632ae8a7b031c4c1ae00d2c84b312255c768cadb2358dcec4fc14e60",
+      "prompt_sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
       "guardrails_prompts_sha256": "957a8d87fea2b2413feae4a2b429f22bb052b13b3bd3b57a4bf1569a8763ccbb",
       "tools_exposed": [
         "evaluate_etf",
@@ -32,19 +33,19 @@
       ]
     },
     "harness": {
-      "git_commit": "312c1ab1180a5f59be9fc439207868fb3e2e4d74",
+      "git_commit": "66a73581bf3924413b13d25e6cca743b1bcb1735",
       "source": "git",
       "dirty": false
     },
     "prompts": [
       {
-        "name": "etf-research-agent-system-prompt",
+        "name": "agent-system-prompt",
         "version": "1",
         "registered": false,
         "linked": true
       },
       {
-        "name": "etf-research-guardrail-input-rail",
+        "name": "agent-guardrail-input-rail",
         "version": "1",
         "registered": false,
         "linked": true
@@ -59,6 +60,7 @@
   },
   "metrics": {
     "research_grounding/mean": 1.0,
+    "research_no_ungrounded_numbers/mean": 0.8333333333333334,
     "research_grounded_in_context/mean": 1.0,
     "research_context_tool_used/mean": 1.0,
     "research_required_facts_present/mean": 0.6666666666666666,
@@ -66,15 +68,15 @@
     "research_no_forecast_claim/mean": 1.0,
     "research_no_execution_claim/mean": 1.0,
     "research_read_only/mean": 1.0,
-    "latency_ms/mean": 20252.432166666666
+    "latency_ms/mean": 18939.59316666667
   },
   "latency": {
     "count": 6,
-    "min_ms": 17917.1,
-    "p50_ms": 19601.1,
-    "p95_ms": 23910.1,
-    "max_ms": 23910.1,
-    "mean_ms": 20252.4,
-    "note": "End-to-end, question in to final token out, on the pinned local model."
+    "min_ms": 16709.3,
+    "p50_ms": 17675.1,
+    "p95_ms": 21528.6,
+    "max_ms": 21528.6,
+    "mean_ms": 18939.6,
+    "note": "End-to-end, question in to final token out, on the configured model."
   }
 }
