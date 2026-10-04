@@ -55,7 +55,7 @@ what was approved.
 | --- | --- | --- |
 | **Gateway** | shape, size, encoding, UUID form, protocol-level confirm/cancel consistency | which choices are legitimate — it cannot know, for an arbitrary application |
 | **Interaction guard** | the responder owns the execution; the submitted id **and** value, together, are one *this* prompt actually offered as a pair; the response type matches the prompt type | anything about the resulting mutation |
-| **Agent** | mints a token binding action, resource, actor, request, authoritative state, exact payload | nothing about current state — that has moved by the time it is applied |
+| **Agent** | mints a token binding action, resource, actor, request, the engine decision the prompt displayed, exact payload | whether that displayed decision is true — it is the model's report of the engine — and anything about current state, which has moved by the time it is applied |
 | **MCP server** | signature, every binding, lifetime ceiling, re-derived state under a row lock, transition policy, single use | — |
 
 ### The gap the interaction guard closes
@@ -87,7 +87,7 @@ HMAC-SHA256 over a base64url claim set. Claims:
 | `action`, `resource_id` | what, to which record |
 | `actor_id` | the authenticated human, from the gateway header — never the model |
 | `request_id` | the one authenticated request this approval belongs to |
-| `choice`, `expected_choice` | what the human picked, and the authoritative state they were shown |
+| `choice`, `expected_choice` | what the human picked, and the engine decision the prompt displayed — as the model reported it, not fetched by the approval layer |
 | `override_requested` | recorded, **never trusted**: re-derived at the point of mutation |
 | `rationale` | required for an override |
 | `payload`, `payload_sha256` | application-owned fields, carried inside the signature |
@@ -97,18 +97,42 @@ The token **is** the payload. Every mutation parameter is read from the signed
 claims rather than from tool arguments, so the model cannot alter, drop or
 re-draft any part of what the human approved.
 
-Every field that ends up in the signed claims — including `payload` fields
-that originate with the model, like `note` — is displayed to the human,
-labelled as model-supplied and not verified, in the same prompt where they
-approve or cancel. The prompt-building code normalizes each such field exactly
+Every `payload` field that originates with the model, like `note`, is displayed
+to the human, labelled as model-supplied and not verified, in the same prompt
+where they approve or cancel. One model-originated claim is *not* labelled that
+way: `expected_choice`, which the prompt presents as the engine's decision — see
+the next section. The prompt-building code normalizes each such field exactly
 once and reuses that value for display, signing and persistence, so what the
 human read is provably what got signed: there is no second read of the raw
 request that display and signing could disagree on. Signing content nobody
 showed the approver would not be a human approval of it.
 
-`expected_choice` is re-derived under a row lock at execution time. If the
-resource or the policy moved under the approval, the token is void rather than
-applied against a state nobody agreed to.
+### The displayed premise is a claim; the recomputation is the check
+
+Four values must not be confused:
+
+| Value | Where it comes from | Trusted? |
+| --- | --- | --- |
+| **The engine's decision** | `rules::evaluate` over the row, the rules and the profile | yes — it is the decision |
+| **The model-reported decision** | the `rules_decision` argument of the model's call to `commit_evaluation` or `shortlist_etf` | no |
+| **The displayed premise** | the prompt's *"Deterministic engine (authoritative)"* line; today it *is* the model-reported decision, and it decides which option is labelled *Confirm* and whether a rationale is requested | no |
+| **`expected_choice`** | the displayed premise, signed into the token | no — signed, not verified |
+
+At the point of mutation the MCP server locks the row, recomputes the engine's
+decision, and refuses the token if `expected_choice` differs from it. That catches
+both ways a premise can be wrong: the resource or the policy moved between display
+and approval, or the model misreported the engine in the first place.
+
+```text
+the human saw a premise   ≠  the premise is authoritative
+a premise was signed      ≠  the premise is true
+backend recomputation     =  the authoritative check
+```
+
+The result is that a false premise can never be applied — mutation integrity
+holds — while a human can still be *shown* one before deciding. That consent gap
+is a known limitation, not a solved problem; see
+[LIMITATIONS.md](LIMITATIONS.md#approval-prompts-can-display-a-model-misreported-deterministic-decision).
 
 The minter caps its own TTL at 30 minutes, and the verifier enforces its own
 independent ceiling — the minter is not the trust boundary. Expiry is strict;
@@ -117,18 +141,22 @@ leniency on expiry would extend the window an approval stays spendable.
 
 ## Transactional integrity
 
-One transaction, in this order:
+One transaction, in this order (`commit_evaluation`, `shortlist_etf` and
+`assign_etf` in `mcp-server/src/server.rs`):
 
-1. consume the nonce (primary key, so a concurrent second spend conflicts);
-2. lock the resource row and re-derive the authoritative state;
-3. re-validate the transition against backend policy;
+1. lock the resource row (`SELECT … FOR UPDATE`) and re-derive the
+   authoritative state from it;
+2. verify the token against that state, and re-validate the transition against
+   backend policy;
+3. consume the nonce (primary key, so a second spend conflicts);
 4. apply the mutation;
 5. append the audit record.
 
 Any failure rolls all of it back, **including the nonce**. That matters in both
-directions: consuming first means two concurrent spends cannot both proceed, and
-rolling back on failure means a refused approval is not silently burned. The
-human's decision is either applied and recorded, or nothing happened at all.
+directions: the row lock serialises concurrent spends against one resource and
+the nonce's primary key refuses the second one, and rolling back on failure means
+a refused approval is not silently burned. The human's decision is either applied
+and recorded, or nothing happened at all.
 
 A refusal is a `200` with `ok: false`, not an error. A legitimately approved
 change can still be refused by policy, and the caller must be able to tell the
@@ -166,7 +194,7 @@ no opinion about ETFs:
 | --- | --- |
 | `resource_id` | canonical `etf_id` |
 | `choice` | the decision the human approved |
-| `expected_choice` | the deterministic decision in force when they chose |
+| `expected_choice` | the engine decision displayed when they chose, as the model reported it; refused unless it equals the recomputation |
 | `rationale` | the override rationale they typed |
 | `payload` | `llm_recommendation`, `research_note`, `assignee` |
 
@@ -189,7 +217,7 @@ make verify-hitl             # a human INITIATES an override, end to end
 ```
 
 Between them: forged and tampered tokens, expiry, the lifetime ceiling and its
-skew tolerance, wrong action/resource/request, moved authoritative state,
+skew tolerance, wrong action/resource/request, a displayed decision that differs from the recomputed one,
 payload-digest disagreement, missing identity, replay, cancellation, invalid and
 unoffered choices, unauthorized interaction responses, every transition rule, and
 that a token minted by the Python agent is accepted by the Rust verifier —

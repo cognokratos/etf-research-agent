@@ -88,7 +88,7 @@ them needs no GPU, no network and no API key.
 | Components sum exactly to the published score, for every fund | `make rules-test` | 31/31 |
 | Reordering `rules_spec.json` changes nothing | `make rules-test` | 31/31 scores identical after reversing every band, component and threshold |
 | Evaluation is a pure function of its three inputs | `make rules-test` | byte-identical JSON across repeated calls, all 31 |
-| Every non-UCITS fund is rejected under the default profile | `make rules-test` | 6/6 |
+| Every non-UCITS fund is rejected under the default profile | `make rules-test` | 5/5 |
 | A non-bypassable constraint blocks every decision above reject, with or without an override flag | `make rules-test` | 4/4 combinations |
 | A missing critical field caps the decision at research | `make rules-test` | 5/5 critical fields, individually |
 | Search ranks and filters on the deterministic result, not a stored column | `make rules-test` | every decision and score filter returns results on an unreviewed universe; a committed value of 100 moves nothing |

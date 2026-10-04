@@ -27,7 +27,7 @@ transcript. Where a control cannot be checked automatically, it says so.
 | Control | Proven by |
 |---|---|
 | A non-UCITS fund is rejected however well it scores | `rules-test` — `VTI-ARCA` scores 88 and rejects |
-| Every non-UCITS fund in the snapshot rejects | `rules-test` — 6/6 |
+| Every non-UCITS fund in the snapshot rejects | `rules-test` — 5/5 |
 | A constraint only applies when the profile enables it | `rules-test` — disabling `require_ucits` restores the score decision |
 | A non-bypassable constraint blocks every decision above reject, for every actor | `rules-test` — both decisions × both values of the override flag |
 | A record that cannot answer a constraint does not satisfy it | `rules-test` — a boolean requirement against a text field fails closed |
@@ -103,7 +103,7 @@ transcript. Where a control cannot be checked automatically, it says so.
 | A lifetime beyond the server's own ceiling refused | `cargo test` — the verifier does not trust the minter's TTL claim |
 | Bound to the exact action and ETF | both |
 | Bound to the authenticated request | both |
-| Bound to the deterministic decision the human was shown | both — a stale decision voids the token |
+| Bound to the engine decision the prompt displayed, and refused unless it equals the recomputation | both — a stale or misreported decision voids the token |
 | The research note matches its own hash | both |
 | Consumed exactly once, atomically with the mutation | `verify-approvals` — a replayed nonce returns 409 |
 | Missing audit identity refused | `cargo test` |

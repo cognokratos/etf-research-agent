@@ -107,7 +107,7 @@ endif
 	eval-list eval-bootstrap eval-bootstrap-replace eval-bootstrap-guardrails \
 	eval-bootstrap-etf eval-bootstrap-policy eval-bootstrap-grounding eval-bootstrap-injection \
 	eval eval-guardrails eval-etf eval-policy eval-grounding eval-injection eval-all \
-	eval-suite-all etf-check rules-test diagrams verify-hitl verify-hitl-audit \
+	eval-suite-all etf-check rules-test rules-explain docs-check diagrams verify-hitl verify-hitl-audit \
 	eval-all-allow-failures eval-test test
 
 help: ## Show all available targets
@@ -283,6 +283,16 @@ etf-check: ## Validate the ETF fixtures, investor profile, rules spec, and label
 rules-test: ## Test the shipped Rust evaluation engine against the fixtures; regenerates the baseline
 	cd mcp-server && cargo test
 
+# Prints one listing's evaluation exactly as the engine and the read models
+# produce it, for the labs in docs/applied/. Runs only the ignored `lab::`
+# helper, so it never regenerates the published baseline the way rules-test
+# does. FACTS overrides scored fields in memory, never data/etfs.json.
+ETF ?= IEAC-LSE
+FACTS ?=
+rules-explain: ## Print one ETF's evaluation and component evidence, no cluster (ETF=<etf_id> FACTS='<json>')
+	@cd mcp-server && ETF='$(ETF)' FACTS='$(FACTS)' cargo test --quiet lab::explain -- --ignored --nocapture 2>&1 \
+		| sed -n '/^{/,/^}/p; /panicked at/,/^$$/p'
+
 diagrams: ## Re-render docs/img/*.png from the Mermaid sources embedded in README.md
 	@mkdir -p docs/img /tmp/etf-research-mmd
 	@python3 scripts/extract_diagrams.py /tmp/etf-research-mmd
@@ -363,8 +373,12 @@ trace-test: verify-trace-pipeline ## Verify observability end to end against MLf
 traces: ## Print the span tree of the most recent MLflow traces
 	python3 scripts/inspect_mlflow_traces.py --limit $${LIMIT:-3}
 
-static-check: etf-check verify-stream-adapter eval-test-host security-config-test ## Offline checks needing no Docker, cluster or model (python3 + node + cargo)
+static-check: etf-check verify-stream-adapter eval-test-host security-config-test docs-check ## Offline checks needing no Docker, cluster or model (python3 + node + cargo)
 	@echo "Static checks passed."
+
+docs-check: ## Verify documentation links, heading anchors and referenced make targets
+	python3 scripts/verify_docs_test.py
+	python3 scripts/verify_docs.py
 
 inspector: ## Start the optional loopback-only MCP Inspector (development profile)
 	$(COMPOSE) --profile dev up -d --build mcp-inspector
@@ -553,8 +567,10 @@ eval-guardrails: ## Run only the Guardrails live evaluation suite
 eval-grounding: ## Run only the grounded-answer live evaluation suite
 	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation run --suite grounding --fail-threshold $(FAIL_THRESHOLD)
 
+# Through eval-suite-all, not `eval`: run against unpoisoned text, every
+# injection case passes vacuously, because there is nothing to resist.
 eval-injection: ## Run only the data-plane prompt-injection suite (poisons and restores ETF free text)
-	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation run --suite injection --fail-threshold $(FAIL_THRESHOLD)
+	@$(MAKE) --no-print-directory eval-suite-all SUITE=injection
 
 eval-bootstrap-grounding: ## Create or merge only the grounding dataset
 	$(EVAL_COMPOSE) run --rm evaluator python -m evaluation bootstrap --suite grounding

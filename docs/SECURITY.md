@@ -155,16 +155,23 @@ because an evaluation run is not a person and should not be recorded as one;
 ## Human-in-the-loop properties
 
 - explicit confirmation for every state change;
-- the **deterministic decision is the default** presented, always; a model
+- the **engine's decision is the default** presented, always; a model
   recommendation is displayed as advisory context and never relabels the default,
-  so confirming the engine's own decision is never recorded as an override;
+  so confirming the engine's decision is never recorded as an override. The
+  decision the prompt displays as the engine's is currently the model's report of
+  it; the token-binding bullet below is what keeps a misreport from being
+  applied, and
+  [LIMITATIONS.md](LIMITATIONS.md#approval-prompts-can-display-a-model-misreported-deterministic-decision)
+  is why it is still a consent problem;
 - a text rationale required for any human override, in either direction;
 - everything the chosen decision requires is collected from the person: a shortlist
   with no model-drafted research note prompts for one, so a human-initiated
   promotion cannot be refused for a field the *model* omitted;
 - approval bound to the exact payload, including the research note by hash;
-- approval bound to the deterministic decision the human was shown, so a policy
-  or data change between display and approval voids the token;
+- approval bound to the engine decision the prompt displayed, and refused unless
+  it equals the decision the MCP recomputes under the row lock — so a policy or
+  data change between display and approval, or a model that misreported the
+  engine, voids the token;
 - the override flag must agree with whether the approved decision actually differs
   from the engine's, so an override cannot be asserted where none happened or
   omitted where one did;

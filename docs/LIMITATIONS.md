@@ -89,7 +89,74 @@ refuses a token that does. What no layer can check is whether the model reported
 the engine's decision faithfully in its *prose* — so the decision the mutation
 applies is read from the signed claims and re-derived from a recomputed
 evaluation, never from what the answer said. The `evaluation` suite measures the
-prose; the boundary does not depend on it.
+prose; the boundary does not depend on it. The same gap reaches the approval
+prompt itself; see the next section.
+
+## Known design limitations
+
+Current behaviour that is documented rather than fixed. Each is a design question
+before it is a code change, and none affects what can be persisted.
+
+### Approval prompts can display a model-misreported deterministic decision
+
+**Why it is possible.** `commit_evaluation` and `shortlist_etf` in
+`agent/src/nat_streaming_react/approval.py` take `rules_decision` as an argument
+of the model's tool call. The approval layer does not fetch the engine's decision
+itself before prompting; it displays what the model reported.
+
+**What the human may see incorrectly.** That reported value is shown as
+*"Deterministic engine (authoritative): …"*, decides which option is labelled
+*Confirm* and which look like *Overrides*, and decides whether a rationale is
+asked for. A model that misreports the engine — observed once with `qwen3:8b` on
+`VTI-ARCA`, see [ARCHITECTURE.md](ARCHITECTURE.md#why-the-deterministic-result-is-bound-into-the-token)
+— can therefore present a promotion as a plain confirmation, with no rationale
+requested.
+
+**Why the mutation still cannot apply.** The reported value is signed as
+`expected_choice`, and signing does not make it true. The MCP server locks the
+row, recomputes the deterministic evaluation, and refuses the approval if
+`expected_choice` differs from the recomputed decision ("approval token was issued
+against a different deterministic decision"); `reconcile_decision` and the hard
+constraints are independent gates behind it. No state changes, and the nonce is
+not consumed.
+
+**What kind of problem it is.** A *consent correctness* problem, not a *mutation
+integrity* problem. The human can approve a false premise; that approval can never
+be applied against the real state.
+
+**Likely direction.** Have the approval layer obtain the authoritative decision
+independently — an authenticated read from the MCP server — before prompting, and
+keep the model's report only as a cross-check. Not implemented; see
+[docs/applied/CHALLENGES.md](applied/CHALLENGES.md#open-problems).
+
+### A profile-fit cap can fire with an inaccurate explanation when no fit could be evaluated
+
+**How to reach it.** Every profile-fit metric must be unscorable: the fund's
+`asset_class` and `region` absent, and every investor preference switched off (or
+the preference fields absent too). Then `profile_fit.available_weight` is `0` and
+`profile_fit.fraction` is reported as `0.0`. With the shipped completeness
+threshold the state is reachable without `CAP-COMPLETENESS` firing: completeness
+lands at exactly 0.7, which is not below it.
+
+```bash
+# with all four preferences set to false in data/investor_profile.json
+make rules-explain ETF=VWCE-XETRA FACTS='{"asset_class": "", "region": ""}'
+```
+
+**Why the result is conservative.** `CAP-PROFILE-FIT` fires and holds the
+decision at `research`, which is no more optimistic than any reasonable reading of
+"fit unknown".
+
+**Why the explanation is inaccurate.** The cap's message says the fund *"earns
+less than half of the available profile-fit weight"*. No profile-fit weight was
+available; nothing about fit was measured. It is the "missing = zero" claim the
+missing-data policy otherwise avoids, one level up.
+
+**The open question** is what "fit" means when nothing about fit could be
+evaluated — an unknown fraction, a separate cap, or a critical-data condition.
+The behaviour is documented here and deliberately left unchanged — the engine,
+the cap, the specification and the baseline are as shipped. See
+[docs/applied/02-uncertainty-is-policy.md](applied/02-uncertainty-is-policy.md#6-an-unknown-that-the-engine-still-reports-as-a-zero).
 
 ## Resource requirements
 

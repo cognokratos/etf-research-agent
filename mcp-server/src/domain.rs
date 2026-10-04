@@ -98,6 +98,9 @@ pub fn annotate_rates(value: Value) -> Value {
     }
 }
 
+// EVIDENCE-CONTRACT: a relationship the model is expected to explain has to be
+// structure in the payload, direction included. See
+// docs/applied/03-design-evidence-for-the-model.md.
 /// The fund facts behind each score component, grouped from the engine's own
 /// matched rules.
 ///
@@ -382,6 +385,9 @@ two describe different policies."
     }
 }
 
+// POLICY-GENERATION: a decision is only interpretable with the rules and profile
+// it was made under; never merge two generations into one record. See
+// docs/applied/06-decisions-that-survive-policy-change.md.
 /// Both policy generations, kept apart.
 ///
 /// Used by events that are not themselves a decision. The committed snapshot and

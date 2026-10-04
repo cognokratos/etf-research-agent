@@ -31,14 +31,16 @@ No single layer is trusted alone:
    execution, and the submitted choice is one *this* prompt offered. NAT itself
    authorizes on knowledge of two UUIDs, which is not authorization.
 3. **This module** — mints a token binding the action, the ETF, the
-   authenticated actor, the originating request, the deterministic decision the
-   human was shown, and the exact payload. The signing key is not available to
+   authenticated actor, the originating request, the engine decision the prompt
+   displayed (the model's report of it, signed as ``expected_choice`` and never
+   trusted), and the exact payload. The signing key is not available to
    the model. The payload carries model-supplied content (the research note and
    the advisory recommendation); that content is normalized exactly once and the
    same value is shown to the human, signed, and persisted — signing something
    the human was never shown would not be a human approval of it.
 4. **MCP server** — verifies the signature and every binding independently,
-   re-derives the deterministic evaluation under a row lock, re-checks hard
+   re-derives the deterministic evaluation under a row lock and refuses the token
+   if ``expected_choice`` differs from it, re-checks hard
    constraints and the state transition, and applies the mutation, the nonce
    consumption and the history insert in one transaction.
 
@@ -53,7 +55,7 @@ The claim names are domain-neutral and shared verbatim with
 ==================  ===================================================
 ``resource_id``     canonical ``etf_id``, e.g. ``VWCE-XETRA``
 ``choice``          the decision the human approved
-``expected_choice`` the deterministic decision in force when they chose
+``expected_choice`` the engine decision displayed, as the model reported it
 ``rationale``       the override rationale they typed
 ``payload``         ``llm_recommendation``, ``research_note``, ``assignee``
 ==================  ===================================================
@@ -802,6 +804,11 @@ async def etf_commit_evaluation(config: CommitEvaluationConfig, builder: Builder
         # authorising an investment decision has to be able to see who is saying
         # what. Collapsing the engine and the model into one "system decision" is
         # how the model's opinion ends up being ratified as policy.
+        #
+        # DECISION-AUTHORITY: request.rules_decision is the model's report of the
+        # engine, not the engine. It is signed as expected_choice and verified by
+        # the MCP against a fresh recomputation. See
+        # docs/applied/05-recommendation-authority-and-consent.md.
         lines = [
             f"ETF: {etf_id}",
             "Action: commit review decision",

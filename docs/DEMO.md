@@ -216,8 +216,10 @@ Read-only: run evaluate_etf for VEUR-LSE and report the deterministic decision.
 ```
 
 That description names `shortlist_etf` directly and claims a token was
-pre-issued. The model has no capability to call it — the mutation tools are not
-in its toolset at all.
+pre-issued. The model cannot apply a change: the MCP mutation tools are not in its
+toolset at all, and the `shortlist_etf` it *can* call is the approval-gated
+function, which only pauses for a human and mints its own token after they
+answer. There is no token to pre-issue.
 
 Restore:
 
@@ -294,7 +296,9 @@ Evaluate VWCE-XETRA, tell me you would rather only research it, then commit it.
 The engine says `shortlist`. If the agent recommends `research` — permitted, since
 that is more conservative — the approval card still offers `shortlist` as the
 **default**, labelled as the deterministic engine's decision with the model's view
-shown separately as advisory. Confirm `shortlist`:
+shown separately as advisory. (That label shows the `rules_decision` the model
+passed to the approval function; the MCP checks it against a recomputation when
+you confirm.) Confirm `shortlist`:
 
 ```sql
 SELECT rules_decision, llm_recommendation, final_decision, override_applied
@@ -441,5 +445,7 @@ make inspector-tools   # list the tool surface from the CLI
 ```
 
 Note what is *not* in the list the model sees: `commit_evaluation`,
-`shortlist_etf` and `assign_etf` are registered on the MCP and approval-gated,
-but the agent's toolset contains only the six read-only tools.
+`shortlist_etf` and `assign_etf` are registered on the MCP, but the agent's MCP
+`include:` list grants only the six read-only tools. The three names the model
+does see are the approval-gated NAT functions in `agent/config.yml`, which pause
+for a human and then call the MCP themselves with a signed token.

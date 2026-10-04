@@ -28,7 +28,7 @@
 //! |-------------------|------------------------------------------------------|
 //! | `resource_id`     | canonical `etf_id`, e.g. `VWCE-XETRA`                |
 //! | `choice`          | the decision the human approved                      |
-//! | `expected_choice` | the deterministic decision in force when they chose  |
+//! | `expected_choice` | the engine decision displayed, as the model reported |
 //! | `rationale`       | the override rationale they typed                    |
 //! | `payload`         | `llm_recommendation`, `research_note`, `assignee`    |
 
@@ -119,10 +119,11 @@ pub struct ApprovalClaims {
     /// The choice the human selected, for a choice-bearing action.
     #[serde(default)]
     pub choice: Option<String>,
-    /// The choice the authoritative backend computed at the moment the human was
-    /// asked — here, the deterministic decision. Re-derived at execution time; a
-    /// mismatch voids the token, because the world the human was shown no longer
-    /// holds.
+    /// The authoritative choice as the approval prompt displayed it — here, the
+    /// deterministic decision as the model reported it to the approval function.
+    /// A premise, never trusted: the caller passes the value re-derived at
+    /// execution time, and a mismatch voids the token, because either the world
+    /// moved or the premise the human was shown was never true.
     #[serde(default)]
     pub expected_choice: Option<String>,
     /// True when the human chose something other than `expected_choice`.
