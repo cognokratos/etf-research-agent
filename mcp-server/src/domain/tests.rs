@@ -335,3 +335,80 @@ fn a_search_result_carries_the_expense_ratio_as_a_percentage() {
     let result = etf_search_model(&etf, &evaluate(&etf), &[]);
     assert_eq!(result["ter_percent"], json!("0.22%"));
 }
+
+// ---------------------------------------------------------------------------
+// Each component carries the fund facts behind it
+//
+// On 2026-10-04 the IEAC-LSE explanation stated the profile-fit cap but no
+// longer that the fund is a bond fund -- the reason the cap applies. The facts
+// were in the payload, but only as a flat rule list to be joined by hand.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn component_evidence_is_the_engines_own_rules_regrouped_for_every_fund() {
+    let (spec, profile) = (load_rules(), load_profile());
+    for seed in load_etfs() {
+        let evaluation = rules::evaluate(&spec, &profile, &seed.facts());
+        let evidence = component_evidence(&evaluation);
+        let groups = evidence.as_object().unwrap();
+
+        // Nothing added, nothing dropped: one entry per matched rule, under that
+        // rule's own component, with the engine's observed value and note.
+        let total: usize = groups.values().map(|items| items.as_array().unwrap().len()).sum();
+        assert_eq!(total, evaluation.matched_rules.len(), "{}", seed.etf_id);
+        for rule in &evaluation.matched_rules {
+            let items = groups[&rule.component].as_array().unwrap();
+            assert!(
+                items.iter().any(|item| item["field"] == rule.field
+                    && item["observed"] == rule.observed
+                    && item["earned_fraction"] == json!(rule.fraction)
+                    && item["note"] == rule.note),
+                "{}: {} / {} missing from component_evidence",
+                seed.etf_id,
+                rule.component,
+                rule.field
+            );
+        }
+
+        // Every component that was actually scored can be explained from its
+        // evidence; an unavailable one is reported under missing_data instead.
+        for breakdown in &evaluation.component_breakdown {
+            assert_eq!(
+                groups.contains_key(&breakdown.key),
+                !breakdown.unavailable,
+                "{}: {}",
+                seed.etf_id,
+                breakdown.key
+            );
+        }
+    }
+}
+
+#[test]
+fn the_profile_fit_evidence_for_a_bond_fund_names_its_asset_class() {
+    // The regression case. The implementation above is generic; this pins the
+    // fund the explanation was lost for.
+    let etf = row("IEAC-LSE");
+    let evaluation = evaluate(&etf);
+    assert!(
+        evaluation.applied_caps.iter().any(|cap| cap.code == "CAP-PROFILE-FIT"),
+        "precondition: IEAC-LSE is capped for profile fit"
+    );
+    assert!(evaluation.profile_fit.components.contains(&"risk_fit".to_owned()));
+
+    let evidence = annotate_rates(component_evidence(&evaluation));
+    let risk_fit = evidence["risk_fit"].as_array().expect("risk_fit evidence");
+    let asset_class = risk_fit
+        .iter()
+        .find(|item| item["field"] == "asset_class")
+        .expect("risk_fit evidence names the asset class");
+    assert_eq!(asset_class["observed"], json!("bond"));
+    assert!(asset_class["note"].as_str().unwrap().contains("asset_class=bond"));
+    // And which way it cut: a bond fund against a high risk tolerance earns
+    // little of that rule, which is why the profile-fit cap applies.
+    assert!(asset_class["earned_fraction"].as_f64().unwrap() < 0.5);
+
+    // Rates inside the evidence carry their unit, like everywhere else.
+    let ter = evidence["cost_efficiency"].as_array().unwrap().iter().find(|i| i["field"] == "ter").unwrap();
+    assert_eq!(ter["observed_percent"], json!("0.2%"));
+}

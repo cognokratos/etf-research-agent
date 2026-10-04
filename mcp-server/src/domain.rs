@@ -98,6 +98,44 @@ pub fn annotate_rates(value: Value) -> Value {
     }
 }
 
+/// The fund facts behind each score component, grouped from the engine's own
+/// matched rules.
+///
+/// `components` says how many points each component earned; nothing said *which
+/// facts about the fund* earned or lost them except a flat rule list the model
+/// had to join by hand. An explanation of "capped for profile fit" therefore
+/// depended on the model choosing to make that join, and on 2026-10-04 it
+/// stopped doing so: the IEAC-LSE answer stated the cap but no longer that the
+/// fund is a bond fund, which is the reason the cap applies. Grouping the same
+/// rules by component makes the evidence for each component a direct lookup.
+///
+/// A regrouping only -- every entry is a rule the engine already matched, with
+/// its field, observed value, the share of the rule's weight it earned, and its
+/// note, so this can explain a decision but has no way to change one. Components with no scorable metric have no entry; they are
+/// reported under `missing_data`.
+pub fn component_evidence(evaluation: &Evaluation) -> Value {
+    let mut grouped = serde_json::Map::new();
+    for rule in &evaluation.matched_rules {
+        let entry = grouped
+            .entry(rule.component.clone())
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Value::Array(items) = entry {
+            items.push(json!({
+                "field": rule.field,
+                "observed": rule.observed,
+                // Whether this fact helped or hurt, from the engine itself: the
+                // share of the rule's weight it earned (1.0 full credit, 0.0
+                // none). Without it the note reads either way --
+                // "risk_tolerance=high against asset_class=bond" was explained
+                // as a good fit when the bond fund earned 0.1 of the rule.
+                "earned_fraction": rule.fraction,
+                "note": rule.note
+            }));
+        }
+    }
+    Value::Object(grouped)
+}
+
 /// One source the fixture cites for an ETF's reference data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DataSource {
