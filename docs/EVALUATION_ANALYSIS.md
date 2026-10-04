@@ -9,17 +9,19 @@ the commands see [`../evaluation/README.md`](../evaluation/README.md).
 
 Measured on 2026-10-04 against agent build `66a7358` — NeMo Agent Toolkit 1.9.0,
 `qwen3:8b` through a local Ollama, prompt digest `00df8142…`, clean tree,
-provenance `consistent: true`. The published artifact for each suite is the first
-run; the stability column counts every run made that day on the 1.9 build, plus
-one same-day run of the pre-migration NAT 1.8 build for comparison (see
-[below](#the-nat-19-upgrade-measured-like-for-like)).
+provenance `consistent: true`. `grounding` was republished the same day from
+build `9343b1a`, after a scorer fix ([below](#research_no_ungrounded_numbers-the-first-live-baseline));
+the agent is byte-identical between the two builds. The published artifact for
+each suite is the first run on its build; the stability column counts every run
+made that day on NAT 1.9, plus one same-day run of the pre-migration NAT 1.8 build
+for comparison (see [below](#the-nat-19-upgrade-measured-like-for-like)).
 
 | Suite | Result | Gated metric | Stability | Ungated signal worth reading |
 |---|---|---|---|---|
 | `evaluation` | PASS 1.0 | `evaluation_correct` | 1.0 on the single 1.9 run, and on same-day 1.8 | — |
 | `injection` | PASS 1.0 | `injection_resisted` | 1.0 on 3/3 runs on 1.9, and on 1.8 | `injection_no_forecast_claim` 0.833 on the 1.8 run only |
 | `guardrails` | PASS 1.0 | `prompt_robustness_correct` | 1.0 on the single 1.9 run, and on same-day 1.8 | — |
-| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 3/3 runs on 1.9, and on 1.8; has measured 0.909 historically | `research_required_facts_present` 0.667 on every run; `research_no_ungrounded_numbers` 0.667–0.833 |
+| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 6/6 runs on 1.9, and on 1.8; has measured 0.909 historically | `research_no_ungrounded_numbers` 1.0 on 3/3 runs after the scorer fix; `research_required_facts_present` 0.5–0.667, understated by a date-format mismatch |
 | `policy` | PASS 1.0 | `decision_policy_correct` | 1.0 on 3/3 runs on 1.9, and on 1.8 | — |
 
 **Every gate is green, and this page does not let that mean more than it does.**
@@ -238,19 +240,29 @@ unsupported assertion, no forecast claim, no execution claim, read-only througho
 instead of the context bundle.
 
 **It clears consistently now, and that is still not the same as being fixed.** On
-2026-10-04 the gate measured 1.0 on four runs — three on NAT 1.9, one on NAT 1.8 —
+2026-10-04 the gate measured 1.0 on seven runs — six on NAT 1.9, one on NAT 1.8 —
 with `research_context_tool_used` at 1.0 every time. Nothing in the grounding path
 changed to bring that about; the same model produced 0.909 on an earlier prompt.
 So the honest report is "passing, historically unstable", and the gate stays where
 it is: it is doing exactly its job, which is to notice when the agent stops asking
 the tool that knows.
 
-`research_required_facts_present` sits at 0.667 on all four runs, up from 0.36 once
-the questions asked for what the expectations check. It is published rather than
-gated, which is the correct place for it: an answer that omits a figure is worse
-than one that includes it and no worse than silence, whereas an answer that
-invents one is a different category of failure. The gate guards the category that
-matters.
+`research_required_facts_present` is published rather than gated, which is the
+correct place for it: an answer that omits a figure is worse than one that
+includes it and no worse than silence, whereas an answer that invents one is a
+different category of failure. The gate guards the category that matters.
+
+Its value on 2026-10-04 — 0.667 on the first four runs, 0.5 on the three after —
+**understates completeness, and the movement between them is not the model
+omitting more.** Every answer checked states the `data_as_of` date, but the
+dataset's term group accepts only `2026-06-30`, and the model often writes
+`June 30, 2026`. CSPX-LSE was counted as missing the date for that reason even in
+the published 0.667 run; on the later runs SPXS-LSE and VWCE-XETRA switched to the
+long form too, which is the whole of the drop to 0.5. The genuine omissions are
+the issuer names — iShares/BlackRock for CSPX-LSE, Vanguard for VWCE-XETRA — on
+every run, which puts true completeness at 4/6. Accepting the common date
+renderings in `research_grounding.json` would make the metric say so; it has not
+been changed here, so the published figure is the scorer's, not this paragraph's.
 
 ### `research_no_ungrounded_numbers`: the first live baseline
 
@@ -291,6 +303,17 @@ It also marks the metric's limit. Only `21.28` was flagged; the mislabelled colu
 passed, because its values happen to occur elsewhere in eight kilobytes of tool
 output. Presence-anywhere is a weak test of *which* number an answer is quoting.
 
+**The false positive is fixed; the metric stays ungated.** `ungrounded_numbers` now
+also accepts a figure equal to an evidence value rounded — from the evidence's
+text, half-up or half-even — to the answer's own number of decimal places. Only
+rounding *to fewer places* counts, so a figure the model derived from several
+evidence values is still reported. Replayed over all 24 answers captured above,
+the IEAC-LSE false positive disappears on every run and VTI-ARCA's `21.28` is
+still flagged on both runs that contained it. Three fresh runs on the fixed build
+then measured 1.0, 1.0, 1.0 — the VTI-ARCA presentation fault simply did not
+recur. That is exactly why it is not promoted into the gate: what the metric now
+catches is real but intermittent, and the label problem above remains.
+
 ---
 
 ## The NAT 1.9 upgrade, measured like-for-like
@@ -313,7 +336,7 @@ builds on the same day, same machine, same model, same prompt digest
 |---|---|---|
 | Gated metrics, all five suites | 1.0 | 1.0 on every run |
 | `policy` sub-metrics | all 1.0 | all 1.0, 3/3 runs |
-| `grounding` ungated | facts 0.667, numbers 0.833 | facts 0.667; numbers 0.833, 0.667, 0.667 |
+| `grounding` ungated, before the scorer fix | facts 0.667, numbers 0.833 | facts 0.667; numbers 0.833, 0.667, 0.667 |
 | `injection_no_forecast_claim` | 0.833 | 1.0, 3/3 runs |
 | `guardrails` output-event metrics | identical | identical |
 | Latency p50, answering suites | 18–31 s | 17–32 s |
