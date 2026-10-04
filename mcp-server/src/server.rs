@@ -152,8 +152,10 @@ fn tool_error(message: impl Into<String>) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message.into())])
 }
 
+/// Every tool result leaves through here, so every score factor that reports a
+/// rate gains its display percentage. See [`crate::domain::annotate_rates`].
 fn tool_json(value: Value) -> CallToolResult {
-    CallToolResult::success(vec![ContentBlock::text(value.to_string())])
+    CallToolResult::success(vec![ContentBlock::text(crate::domain::annotate_rates(value).to_string())])
 }
 
 fn invalid_params(message: String) -> McpError {
@@ -688,6 +690,7 @@ approved. Call evaluate_etf or get_etf for the full component breakdown."
                 "The score components that drove the result, named from deterministic_conclusions.components.",
                 "Any hard constraint or policy cap that applied, and what it means.",
                 "Any missing metric, and the effect it had on the decision.",
+                "Any rate quoted from its *_percent field (ter_percent, observed_percent), never as the raw fraction with a percent sign.",
                 "The data_as_of date whenever recency is relevant to the claim being made."
             ],
             "explanation_constraints": [

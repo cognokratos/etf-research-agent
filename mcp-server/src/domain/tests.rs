@@ -251,3 +251,87 @@ fn stored_prose_is_boxed_away_from_computed_values() {
     assert_eq!(model["etf"].get("research_note"), None);
     assert_eq!(model["etf"].get("description"), None);
 }
+
+// ---------------------------------------------------------------------------
+// Rates carry their unit
+//
+// The engine stores rates as fractions. On 2026-10-04 the agent stated "TER of
+// 0.0022%" for a 0.22% expense ratio in most answers that gave one, because the
+// bare fraction was not self-describing. Every read model now carries a
+// `*_percent` string beside each rate.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_fraction_is_displayed_as_the_percentage_a_person_reads() {
+    for (fraction, expected) in [
+        (0.0022, "0.22%"),
+        (0.0007, "0.07%"),
+        (0.0003, "0.03%"),
+        (0.0085, "0.85%"),
+        (0.2, "20%"),
+        (0.36, "36%"),
+        (1.0, "100%"),
+        (-0.0012, "-0.12%"),
+        (0.0, "0%"),
+        (0.00012345, "0.0123%"),
+    ] {
+        assert_eq!(percent_display(Some(fraction)).as_deref(), Some(expected), "{fraction}");
+    }
+    assert_eq!(percent_display(None), None);
+    assert_eq!(percent_display(Some(f64::NAN)), None);
+}
+
+#[test]
+fn every_rate_in_the_read_model_has_its_percentage_beside_it() {
+    let etf = row("VWCE-XETRA");
+    let model = etf_read_model(&etf, &evaluate(&etf));
+    let facts = &model["etf"];
+    assert_eq!(facts["ter"], json!(0.0022), "the raw fraction stays for existing readers");
+    assert_eq!(facts["ter_percent"], json!("0.22%"));
+    assert_eq!(facts["top_10_concentration_percent"], json!("20%"));
+    assert!(facts["units"].as_str().unwrap().contains("0.0022 means 0.22%"));
+
+    // Structural, so a rate added later without its display string fails here.
+    for field in RATE_FIELDS {
+        let holder = if facts.get(field).is_some() { facts } else { &facts["context_only_not_scored"] };
+        assert!(holder.get(field).is_some(), "{field} is not in the read model");
+        let display = holder.get(format!("{field}_percent")).unwrap_or_else(|| panic!("{field}_percent missing"));
+        assert_eq!(*display, json!(percent_display(holder[field].as_f64())), "{field}");
+    }
+}
+
+#[test]
+fn a_score_factor_that_reports_a_rate_carries_its_percentage() {
+    let etf = row("VWCE-XETRA");
+    let model = etf_read_model(&etf, &evaluate(&etf));
+    let factors = model["current_evaluation"]["matched_rules"].as_array().unwrap();
+
+    let ter = factors.iter().find(|f| f["field"] == "ter").expect("a TER factor");
+    assert_eq!(ter["observed"], json!(0.0022), "the engine's own value is unchanged");
+    assert_eq!(ter["observed_percent"], json!("0.22%"));
+
+    for factor in factors {
+        let field = factor["field"].as_str().unwrap();
+        assert_eq!(
+            factor.get("observed_percent").is_some(),
+            RATE_FIELDS.contains(&field) && factor["observed"].is_number(),
+            "{field}: only rates gain a percentage, and every numeric rate does"
+        );
+    }
+}
+
+#[test]
+fn rate_annotation_is_additive_and_idempotent() {
+    let raw = json!({"matched_rules": [{"field": "ter", "observed": 0.0022}, {"field": "holdings_count", "observed": 3600.0}]});
+    let once = annotate_rates(raw.clone());
+    assert_eq!(annotate_rates(once.clone()), once);
+    assert_eq!(once["matched_rules"][0]["observed"], raw["matched_rules"][0]["observed"]);
+    assert!(once["matched_rules"][1].get("observed_percent").is_none());
+}
+
+#[test]
+fn a_search_result_carries_the_expense_ratio_as_a_percentage() {
+    let etf = row("VWCE-XETRA");
+    let result = etf_search_model(&etf, &evaluate(&etf), &[]);
+    assert_eq!(result["ter_percent"], json!("0.22%"));
+}
