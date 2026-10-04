@@ -763,6 +763,77 @@ class UngroundedNumberTests(unittest.TestCase):
         self.assertEqual(self.ungrounded("1234.57", '{"aum": 1234.6}'), ["1234.57"])
 
 
+class UnitErrorTests(unittest.TestCase):
+    """A rate stated with the wrong unit is an error, not a match.
+
+    Every rate the engine returns is a fraction (``"ter": 0.0022`` is 0.22%).
+    On 2026-10-04 answers wrote "TER of 0.0022%" and "TER at 0.0007%" -- the raw
+    fraction with a percent sign, wrong by a factor of a hundred -- and the
+    completeness check counted them as the expected figure because it matches
+    substrings. See docs/EVALUATION_ANALYSIS.md.
+    """
+
+    EVIDENCE = (
+        '{"ter": 0.0022, "top_10_concentration": 0.2, "data_completeness": 0.9, '
+        '"note": "TER above 0.10% and at or below 0.20%.", "holdings_count": 3600}'
+    )
+
+    def setUp(self):
+        from evaluation.scorers import unit_errors
+
+        self.errors = lambda answer, evidence=self.EVIDENCE: unit_errors(answer, evidence)
+
+    def test_a_raw_fraction_with_a_percent_sign_is_an_error(self):
+        self.assertEqual(self.errors("Cost Efficiency: 14 points (TER of 0.0022%)"), ["0.0022%"])
+        # CSPX-LSE, as captured.
+        self.assertEqual(self.errors("TER at 0.0007%", '{"ter": 0.0007}'), ["0.0007%"])
+
+    def test_correct_renderings_are_not_errors(self):
+        for answer in (
+            "TER of 0.22%",
+            "TER of 0.2%",  # correct rounding
+            "a 0.22 percent TER",
+            "TER of 22 basis points",
+            "22 bps",
+            "top-10 concentration of 20%",
+            "90% data completeness",
+            "a TER above 0.10%",  # a threshold quoted from the evidence
+        ):
+            with self.subTest(answer=answer):
+                self.assertEqual(self.errors(answer), [])
+
+    def test_basis_points_written_as_the_percent_figure_are_an_error(self):
+        self.assertEqual(self.errors("TER of 0.22 basis points"), ["0.22 basis points"])
+
+    def test_an_unrelated_or_unknown_percentage_is_left_alone(self):
+        # Not this check's business: a figure that matches nothing is reported by
+        # ungrounded_numbers, not guessed at here.
+        self.assertEqual(self.errors("an expected 7% return"), [])
+        self.assertEqual(self.errors("3600 holdings"), [])
+
+    def test_a_unit_error_does_not_satisfy_a_completeness_term(self):
+        from evaluation.scorers import research_grounding_scores
+
+        expectations = {"required_term_groups": [["0.22", "22 basis", "0.0022"]]}
+
+        def facts(answer):
+            outputs = {
+                "answer": answer,
+                "tool_calls": [{"name": "get_research_context"}],
+                "tool_results": [{"name": "get_research_context", "result": self.EVIDENCE}],
+            }
+            return {f.name: f for f in research_grounding_scores(outputs, expectations)}
+
+        wrong = facts("TER of 0.0022%")
+        self.assertFalse(wrong["research_required_facts_present"].value)
+        self.assertFalse(wrong["research_units_correct"].value)
+        right = facts("TER of 0.22%")
+        self.assertTrue(right["research_required_facts_present"].value)
+        self.assertTrue(right["research_units_correct"].value)
+        # The raw fraction without a unit is still a valid way to state it.
+        self.assertTrue(facts("ter: 0.0022")["research_required_facts_present"].value)
+
+
 class GroundingDatasetDateTests(unittest.TestCase):
     """The data_as_of expectation must accept the date however it is written.
 
