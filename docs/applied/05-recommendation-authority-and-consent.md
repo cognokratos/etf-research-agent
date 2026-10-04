@@ -52,11 +52,11 @@ record in one transaction — or refuse and roll all of it back.
 | Rule | First enforced | Authoritatively enforced |
 | --- | --- | --- |
 | Advisory ceiling on the model | `commit_evaluation` request check in [`approval.py`](../../agent/src/nat_streaming_react/approval.py) — before a human is asked | `rules::reconcile_decision` in [`rules.rs`](../../mcp-server/src/rules.rs), after the row lock |
-| The default is the engine's decision | the approval prompt labels the engine's decision *Confirm* and every other *Override* | `reconcile_decision`: `override_applied = requested != rules_decision` |
+| The default is the engine's decision | the approval prompt labels the *model-reported* engine decision *Confirm* and every other *Override* | `reconcile_decision`: `override_applied = requested != rules_decision` |
 | An override declares itself | the token's `override_requested`, derived from the choice | `reconcile_decision` refuses a flag that disagrees, in either direction |
 | Overrides carry a rationale | the prompt requires one | `commit_evaluation` / `shortlist_etf` in [`server.rs`](../../mcp-server/src/server.rs) |
 | Hard constraints hold | — (all options are offered on purpose) | `rules::blocking_hard_constraint`, called in every mutation body |
-| The human saw *this* decision | the token binds `expected_choice` | `ApprovalVerifier::verify` against the decision recomputed under the lock |
+| The displayed premise was true | the token binds it as `expected_choice` — signed, not verified | `ApprovalVerifier::verify` against the decision recomputed under the lock |
 
 The left column is convenience; the right column is the boundary. The agent-side
 checks make a bad request fail early and readably, but nothing in the system
@@ -154,9 +154,11 @@ its job — but the human still made a decision on a falsehood.
 authenticated identity and can reach the MCP server. What would it take for the
 prompt to *display* the engine's recomputed decision rather than the model's claim,
 keeping the model's value only as a cross-check? What does the token's
-`expected_choice` then mean, and which refusal becomes impossible? (This is an
-observation about the current design, not something this repository changes; see
-[CHALLENGES.md](CHALLENGES.md#open-problems).)
+`expected_choice` then mean, and which refusal becomes impossible? (This is a
+documented limitation of the current design —
+[LIMITATIONS.md](../LIMITATIONS.md#approval-prompts-can-display-a-model-misreported-deterministic-decision) — and an open problem in
+[CHALLENGES.md](CHALLENGES.md#open-problems), not something this repository
+changes.)
 
 ### 4. Read the point of mutation
 
@@ -179,8 +181,9 @@ against the recomputation.
   detectable, and recompute the truth at the point of mutation.
 * The point-of-mutation backend is the only component that knows the decision.
   The UI, the token and the model all carry claims about it.
-* Consent is only as good as the premise it was shown. A safe mutation path and a
-  well-informed approval are different properties.
+* Consent is only as good as the premise it was shown. **Mutation integrity and
+  informed consent are separate properties**: this repository guarantees the
+  first and, today, not the second.
 
 ## Go deeper
 

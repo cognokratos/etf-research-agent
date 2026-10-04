@@ -90,16 +90,20 @@ never become a wrong *decision*.
 ### Recording a decision
 
 Ask to commit one — "Commit the evaluation for ESPO-XETRA" — and the agent
-evaluates first, then an approval card appears offering all three decisions with
-the engine's own answer labelled *Confirm* and the others labelled *Override*.
-Choosing anything other than the engine's decision requires a typed rationale;
-choosing `shortlist` also requires a grounded research note, and you are asked
-for one if the model did not draft it. The choice is bound to a signed token
-carrying the authenticated actor, the originating request, the deterministic
-decision you were shown and the exact note — verified independently by the MCP
-server, which re-derives the evaluation under a row lock, re-checks the hard
-constraints, and applies the mutation, the nonce and the history insert in one
-transaction.
+evaluates first, then an approval card appears offering all three decisions, with
+the engine's decision labelled *Confirm* and the others labelled *Override*.
+Choosing anything other than that decision requires a typed rationale; choosing
+`shortlist` also requires a grounded research note, and you are asked for one if
+the model did not draft it. The choice is bound to a signed token carrying the
+authenticated actor, the originating request, the engine decision the card
+displayed and the exact note — verified independently by the MCP server, which
+re-derives the evaluation under a row lock, refuses the token if the displayed
+decision is not what the engine actually returns, re-checks the hard constraints,
+and applies the mutation, the nonce and the history insert in one transaction.
+
+The card's engine decision is currently the model's report of it, not a value the
+approval layer fetched itself. A misreport can be *shown* to you; it can never be
+*applied* — see [LIMITATIONS.md](docs/LIMITATIONS.md#approval-prompts-can-display-a-model-misreported-deterministic-decision).
 
 A refusal after approval is the control working, not a gap: a non-UCITS fund
 cannot be shortlisted however anyone votes. The agent is told plainly that

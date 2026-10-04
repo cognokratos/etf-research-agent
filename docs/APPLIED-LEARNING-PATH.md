@@ -65,7 +65,7 @@ flowchart TD
     E["Deterministic engine<br/>rules::evaluate — authoritative"] --> RD["rules_decision<br/>+ component_evidence"]
     RD --> L["LLM: explains, may recommend<br/>advisory only"]
     L --> H["Human: confirms or overrides<br/>with a rationale"]
-    H --> T["Signed approval<br/>binds the decision the human was shown"]
+    H --> T["Signed approval<br/>binds the premise the human was shown"]
     T --> B["Backend at the point of mutation<br/>re-derives, re-checks, refuses or applies"]
     B --> A["Mutation + append-only audit<br/>with rules_version and profile_version"]
     RD -. "recomputed, never trusted" .-> B

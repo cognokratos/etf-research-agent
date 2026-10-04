@@ -143,6 +143,8 @@ unique?
 
 ### 4. Make the listings disagree
 
+> Requires a clean worktree; the restore command discards local edits in these paths. See the [ground rules](README.md#ground-rules-for-the-labs).
+
 Change `ter` on `VUSA-XETRA` alone in `data/etfs.json` to `0.0009` and run
 `make etf-check`:
 

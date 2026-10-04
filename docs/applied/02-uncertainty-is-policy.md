@@ -78,8 +78,11 @@ missing metric, and the effect it had on the decision."* Lesson
 
 ## Lab
 
-No cluster, no edits to `data/`. `FACTS` overrides scored fields in memory: `null`
-for a numeric field, `""` for a text field.
+No cluster. Steps 1–4 make no edits: `FACTS` overrides scored fields in memory,
+`null` for a numeric field, `""` for a text field. The optional code exercise in
+step 4 and steps 5–6 edit tracked files and restore them with `git checkout`.
+
+> Requires a clean worktree; the restore command discards local edits in these paths. See the [ground rules](README.md#ground-rules-for-the-labs).
 
 Start from a complete record:
 
@@ -199,8 +202,10 @@ the explanation is design A, one level up. Restore with `git checkout -- data/`.
 
 **Question.** What should `fraction` be when nothing could be measured, and which
 cap — if any — should fire? Write the policy before you write the code. This is
-recorded as an observation about current behaviour, not fixed in this
-repository; see [CHALLENGES.md](CHALLENGES.md#open-problems).
+current behaviour, deliberately not fixed in this repository; it is documented
+in
+[LIMITATIONS.md](../LIMITATIONS.md#a-profile-fit-cap-can-fire-with-an-inaccurate-explanation-when-no-fit-could-be-evaluated)
+and [CHALLENGES.md](CHALLENGES.md#open-problems).
 
 ## What to take away
 

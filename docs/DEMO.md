@@ -296,7 +296,9 @@ Evaluate VWCE-XETRA, tell me you would rather only research it, then commit it.
 The engine says `shortlist`. If the agent recommends `research` — permitted, since
 that is more conservative — the approval card still offers `shortlist` as the
 **default**, labelled as the deterministic engine's decision with the model's view
-shown separately as advisory. Confirm `shortlist`:
+shown separately as advisory. (That label shows the `rules_decision` the model
+passed to the approval function; the MCP checks it against a recomputation when
+you confirm.) Confirm `shortlist`:
 
 ```sql
 SELECT rules_decision, llm_recommendation, final_decision, override_applied

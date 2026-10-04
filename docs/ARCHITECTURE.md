@@ -400,6 +400,12 @@ validation, audit event, API response, approval prompt:
 | `llm_recommendation` | the model | advisory only, in both directions |
 | `requested_decision` | the authenticated human | final, with a rationale if it differs from `rules_decision` |
 
+In the approval request the model passes `rules_decision` itself, so on its way to
+the human it is the model's *report* of the engine's decision. The MCP never uses
+that report: it recomputes `rules_decision` under the row lock and refuses an
+approval whose signed copy of the report (`expected_choice`) differs — see
+[why the deterministic result is bound into the token](#why-the-deterministic-result-is-bound-into-the-token).
+
 The commit path used to derive the default as
 `llm_recommendation.unwrap_or(rules_decision)`. With the engine at `shortlist` and
 the model at `research` that made `research` "the system decision", so a person
@@ -462,7 +468,7 @@ this application they carry:
 | --- | --- |
 | `resource_id` | canonical `etf_id`, e.g. `VWCE-XETRA` |
 | `choice` | the decision the human approved |
-| `expected_choice` | the deterministic decision in force when they chose |
+| `expected_choice` | the engine decision displayed when they chose, as the model reported it; refused unless it equals the recomputation |
 | `rationale` | the override rationale they typed |
 | `payload` | `llm_recommendation`, `research_note`, `assignee` |
 
@@ -505,9 +511,9 @@ transaction as the mutation, so replay fails atomically.
 
 ### Why the deterministic result is bound into the token
 
-The claims carry `expected_choice` — the deterministic decision — and
-verification refuses a token whose value no longer matches what the engine
-returns, recomputed under the row lock at the moment of the write.
+The claims carry `expected_choice` — the engine decision the approval prompt
+displayed — and verification refuses a token whose value does not match what the
+engine returns, recomputed under the row lock at the moment of the write.
 
 The obvious reason is staleness: if the record changed, or the profile changed, or
 the specification changed between the moment a person was shown a decision and the
@@ -546,6 +552,13 @@ identically if the model were fully captured by an injected instruction.
 The hard constraint is a third, independent gate underneath both — `HC-UCITS` would
 have refused this same mutation had the binding somehow passed. Which one fires
 first depends on what the model got wrong.
+
+What none of the three does is stop the human being *shown* the false premise.
+The approval prompt displays the model-supplied `rules_decision` as the engine's
+decision, and that value also decides which option reads as *Confirm* and whether
+a rationale is asked for. Mutation integrity holds; informed consent is a separate
+property, and today it is not guaranteed. See
+[LIMITATIONS.md](LIMITATIONS.md#approval-prompts-can-display-a-model-misreported-deterministic-decision).
 
 ## Failure behaviour
 

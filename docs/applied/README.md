@@ -49,6 +49,11 @@ repeating them:
 
 ## Ground rules for the labs
 
+* **Run labs that modify tracked files only from a clean worktree.** Check with
+  `git status --short`, and commit or stash your own work first. The documented
+  restore commands (`git checkout -- data/`, `git checkout -- mcp-server/`, …)
+  deliberately discard the lab's local edits, and they discard any other
+  uncommitted changes in the same paths along with them.
 * **Most labs need no cluster.** `make rules-explain ETF=<etf_id>` prints one
   fund's evaluation and `component_evidence` from the shipped engine;
   `FACTS='<json>'` overrides scored fields in memory. It never writes anything.

@@ -103,7 +103,7 @@ transcript. Where a control cannot be checked automatically, it says so.
 | A lifetime beyond the server's own ceiling refused | `cargo test` — the verifier does not trust the minter's TTL claim |
 | Bound to the exact action and ETF | both |
 | Bound to the authenticated request | both |
-| Bound to the deterministic decision the human was shown | both — a stale decision voids the token |
+| Bound to the engine decision the prompt displayed, and refused unless it equals the recomputation | both — a stale or misreported decision voids the token |
 | The research note matches its own hash | both |
 | Consumed exactly once, atomically with the mutation | `verify-approvals` — a replayed nonce returns 409 |
 | Missing audit identity refused | `cargo test` |

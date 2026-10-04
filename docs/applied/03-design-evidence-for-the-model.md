@@ -175,6 +175,8 @@ result: each line is an obligation the answer should discharge.
 
 ### 5. Break the contract
 
+> Requires a clean worktree; the restore command discards local edits in these paths. See the [ground rules](README.md#ground-rules-for-the-labs).
+
 On a branch, remove `"earned_fraction": rule.fraction,` from
 `component_evidence` in `domain.rs`, run `make rules-test`, then
 `make rebuild-mcp` and ask the question from step 4 several times.

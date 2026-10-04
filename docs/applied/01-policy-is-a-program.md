@@ -79,6 +79,8 @@ interpreter.
 Everything here runs offline. Steps 2–5 edit files under `data/`; the undo is at
 the end and is the same for every step.
 
+> Requires a clean worktree; the restore command discards local edits in these paths. See the [ground rules](README.md#ground-rules-for-the-labs).
+
 ### 1. Read the policy as the engine applies it
 
 ```bash

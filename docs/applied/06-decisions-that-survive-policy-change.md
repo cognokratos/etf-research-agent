@@ -117,6 +117,8 @@ Expect `RESEARCH | research | 72 | 1.1.0 | 1.0.0`.
 
 ### 3. Change the mandate
 
+> Requires a clean worktree; the restore command discards local edits in these paths. See the [ground rules](README.md#ground-rules-for-the-labs).
+
 In `data/investor_profile.json`, set `"accumulating": false` under `preferences`
 and change `version` to `"1.1.0-lab"`. `VJPN-LSE` is a distributing share class,
 so this preference was costing it. Apply it — no rebuild, `data/` is mounted
