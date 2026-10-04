@@ -29,7 +29,8 @@ Two processors live here:
     reached by this processor.
 
 ``UserIdentityProcessor``
-    Governs the per-user attribution NAT 1.9 added to every span. See its own
+    Governs the per-user attribution NAT 1.9 added to every span, and keeps the
+    raw gateway identity out of span metadata in every mode. See its own
     docstring for what the value is and why the default is not to export it.
 """
 
@@ -133,6 +134,19 @@ USER_ID_ENV = "OTEL_TRACE_USER_ID"
 
 _TRUTHY: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
+#: Gateway-minted headers that name the person behind a request. NAT copies
+#: request headers into span metadata (``<prefix>.metadata``), so without this
+#: the raw Keycloak subject and username are exported on every request whatever
+#: the attribution switch says. Redacted in *both* modes: when attribution is on,
+#: it is carried by NAT's pseudonym, never by the raw subject. ``x-request-id``
+#: is deliberately not here -- it is what joins a trace to the history row that
+#: does record the actor -- and ``x-authenticated-email`` is already removed by
+#: ``SensitiveHeaderRedactionProcessor``.
+IDENTITY_HEADERS: frozenset[str] = frozenset({
+    "x-authenticated-user-id",
+    "x-authenticated-username",
+})
+
 
 def user_attribution_enabled() -> bool:
     """Whether per-user identifiers may be exported with spans."""
@@ -163,10 +177,27 @@ class UserIdentityProcessor(Processor[Span, Span]):
 
     Set ``OTEL_TRACE_USER_ID=true`` to export it — worth doing where the trace
     backend is access-controlled and attribution genuinely helps triage.
+
+    The raw identity never leaves, in either mode
+    ---------------------------------------------
+    NAT also copies the request's headers into span metadata, so the gateway's
+    ``x-authenticated-user-id`` (the Keycloak subject) and
+    ``x-authenticated-username`` would otherwise be exported verbatim on every
+    request, making the switch above cosmetic. Measured on 1.9.0 with the
+    switch off: ``user.id`` was gone and ``nat.user.id`` read ``[redacted]``,
+    while both raw headers were present in ``nat.metadata``. This processor
+    therefore redacts ``IDENTITY_HEADERS`` unconditionally — that part is this
+    application's addition to the template's processor.
     """
 
     def __init__(self, span_prefix: str = "nat", enabled: bool | None = None) -> None:
         self._nat_user_id_key = f"{span_prefix}.user.id"
+        # Same walk as credential redaction, a different deny-list. Defined
+        # below; resolved at construction time, not import time.
+        self._identity_headers = SensitiveHeaderRedactionProcessor(
+            span_prefix=span_prefix,
+            sensitive_headers=IDENTITY_HEADERS,
+        )
         self._enabled = user_attribution_enabled() if enabled is None else enabled
         logger.info(
             "Per-user trace attribution %s (%s)",
@@ -175,6 +206,7 @@ class UserIdentityProcessor(Processor[Span, Span]):
         )
 
     async def process(self, item: Span) -> Span:
+        item = await self._identity_headers.process(item)
         if self._enabled:
             return item
         # Dropped, not masked: see OTEL_USER_ID_KEY.

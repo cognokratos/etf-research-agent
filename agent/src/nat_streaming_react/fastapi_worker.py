@@ -209,6 +209,46 @@ class RequireIdentityHeaderMiddleware:
         await self.app(scope, receive, send)
 
 
+def disable_fastapi_native_telemetry(app: FastAPI) -> bool:
+    """Switch off FastAPI's built-in OpenTelemetry, which this agent must not use.
+
+    FastAPI 0.142 (resolved transitively; NAT pins no upper bound) instruments
+    every request by default whenever a global tracer provider is configured --
+    and ``otel_setup`` must configure one, or Guardrails spans would not export.
+    Left on it does two things, both measured on this stack:
+
+    * every request, including the container health probe every few seconds,
+      becomes its own ``GET /health`` / ``POST /v1/workflow/full`` trace beside
+      NAT's workflow trace, so the trace store is dominated by probes and
+      ``make trace-test`` cannot find the workflow trace among the newest;
+    * at lifespan start it reads ``OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`` and adds
+      a *second* OTLP exporter to that same global provider ("it does not
+      inspect or deduplicate other components' exporters"), so each span
+      leaves the process twice.
+
+    The trace this deployment wants is NAT's workflow root with Guardrails
+    joined to it (``observability.trace_context``); FastAPI's server span adds
+    nothing to it.
+
+    NAT constructs the app as ``FastAPI(lifespan=...)`` and offers no way to pass
+    FastAPI's public ``telemetry=`` argument, so this edits the resulting
+    configuration in place. ``app._telemetry`` is FastAPI-private: it is the same
+    mapping ``NativeTelemetry`` consults on every request and the lifespan hook
+    reads at startup, which is why updating it before the server starts is
+    sufficient. Returns whether the switch was found, so a FastAPI release that
+    renames it is caught by ``verify_trace_pipeline`` rather than silently
+    re-enabling the duplicate export. Removal condition: NAT exposes the FastAPI
+    constructor arguments, or stops resolving a FastAPI with native telemetry.
+    """
+
+    telemetry = getattr(app, "_telemetry", None)
+    if not isinstance(telemetry, dict):
+        logger.warning("FastAPI native telemetry switch not found; leaving it as is")
+        return False
+    telemetry.update(tracing=False, metrics=False, logs=False, auto_configure=False)
+    return True
+
+
 class AuthenticatedFastApiFrontEndPluginWorker(FastApiFrontEndPluginWorker):
     """NAT FastAPI worker that authenticates every non-health request."""
 
@@ -222,6 +262,10 @@ class AuthenticatedFastApiFrontEndPluginWorker(FastApiFrontEndPluginWorker):
 
     def build_app(self) -> FastAPI:
         app = super().build_app()
+
+        # Before the server starts, so FastAPI's lifespan hook never attaches its
+        # own exporter. See disable_fastapi_native_telemetry.
+        disable_fastapi_native_telemetry(app)
 
         # Provenance for evaluation artifacts. Registered before the middleware
         # below, so it sits *inside* the authentication layer and is refused

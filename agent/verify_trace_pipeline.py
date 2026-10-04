@@ -35,6 +35,7 @@ from opentelemetry import trace as otel_trace
 
 from nat_streaming_react.observability import trace_content
 from nat_streaming_react.observability.trace_context import start_request_trace
+from nat_streaming_react.observability.trace_processor import IDENTITY_HEADERS
 from nat_streaming_react.observability.trace_processor import OTEL_USER_ID_KEY
 from nat_streaming_react.observability.trace_processor import REDACTED
 from nat_streaming_react.observability.trace_processor import SensitiveHeaderRedactionProcessor
@@ -333,7 +334,9 @@ def test_credentials_never_reach_telemetry() -> None:
     assert headers["authorization"] == REDACTED
     assert headers["cookie"] == REDACTED
     assert headers["x-api-key"] == REDACTED
-    # Correlation identifiers must survive: they are what links a trace to a request.
+    # Correlation identifiers must survive *this* processor: they are what links
+    # a trace to a request. (The raw identity is removed later, by
+    # UserIdentityProcessor -- see test_raw_gateway_identity_never_reaches_telemetry.)
     assert headers["x-request-id"] == "req-1"
     assert headers["x-authenticated-user-id"] == "researcher-1"
     assert "super-secret-agent-key" not in processed.attributes["nat.metadata"]
@@ -370,6 +373,73 @@ def test_user_attribution_is_exported_when_enabled() -> None:
     assert processed.attributes[OTEL_USER_ID_KEY] == user_id
     assert processed.attributes["nat.user.id"] == user_id
     print("PASS: per-user span attribution is exported when enabled")
+
+
+def test_raw_gateway_identity_never_reaches_telemetry() -> None:
+    """The switch governs NAT's pseudonym; the raw subject is withheld regardless.
+
+    NAT copies request headers into ``nat.metadata``. Measured on 1.9.0 with
+    attribution off, the Keycloak subject and username were still exported
+    there, which made the switch cosmetic.
+    """
+
+    subject = "f3a1c2d4-keycloak-subject"
+    metadata = {
+        "provided_metadata": {
+            "request_attributes": {
+                "headers": {
+                    "x-authenticated-user-id": subject,
+                    "x-authenticated-username": "researcher.one",
+                    "x-authenticated-roles": "researcher",
+                    "x-request-id": "req-1",
+                }
+            }
+        }
+    }
+    for enabled in (False, True):
+        span = workflow_span(**{"nat.metadata": json.dumps(metadata)})
+        processed = asyncio.run(UserIdentityProcessor(enabled=enabled).process(span))
+        exported = processed.attributes["nat.metadata"]
+        headers = json.loads(exported)["provided_metadata"]["request_attributes"]["headers"]
+        for name in IDENTITY_HEADERS:
+            assert headers[name] == REDACTED, (enabled, name)
+        assert subject not in exported and "researcher.one" not in exported, enabled
+        # What links a trace to the history row (which does record the actor)
+        # survives, and so does the non-identifying role.
+        assert headers["x-request-id"] == "req-1"
+        assert headers["x-authenticated-roles"] == "researcher"
+    print("PASS: the raw gateway identity is redacted from span metadata in both modes")
+
+
+def test_fastapi_native_telemetry_is_switched_off() -> None:
+    """FastAPI's own request tracing must not run beside NAT's.
+
+    With a global tracer provider configured -- which this process always has --
+    FastAPI 0.142 traces every request as a separate trace and, at startup, adds
+    a second OTLP exporter to the shared provider. The worker switches it off;
+    this asserts the switch is still where the worker expects it, and that
+    flipping it actually disables FastAPI's per-request decision.
+    """
+
+    from fastapi import FastAPI
+    from opentelemetry.sdk.trace import TracerProvider
+
+    from nat_streaming_react.fastapi_worker import disable_fastapi_native_telemetry
+
+    try:
+        # An explicit provider, through FastAPI's public argument, so "enabled"
+        # does not depend on whether this process configured a global one --
+        # otherwise the assertion below could pass without proving anything.
+        app = FastAPI(telemetry={"tracer_provider": TracerProvider()})
+    except TypeError:
+        print("PASS: this FastAPI has no native telemetry to disable")
+        return
+    native = app._native_telemetry
+    assert native.enabled() is True, "precondition: FastAPI tracing starts enabled"
+    assert disable_fastapi_native_telemetry(app), "FastAPI renamed its telemetry switch"
+    assert native.enabled() is False, "FastAPI would still trace requests"
+    assert app._telemetry["auto_configure"] is False, "FastAPI would still add an OTLP exporter"
+    print("PASS: FastAPI's native request tracing and exporter auto-configuration are off")
 
 
 def test_user_attribution_reads_its_environment_switch() -> None:
@@ -939,6 +1009,8 @@ def main() -> None:
     test_user_attribution_is_off_by_default()
     test_user_attribution_is_exported_when_enabled()
     test_user_attribution_reads_its_environment_switch()
+    test_raw_gateway_identity_never_reaches_telemetry()
+    test_fastapi_native_telemetry_is_switched_off()
     test_streaming_output_block_records_released_refusal_not_raw_secret()
     test_streaming_benign_scalars_are_preserved_in_the_recorded_answer()
     test_concurrent_streaming_requests_do_not_mix_captured_answers()
