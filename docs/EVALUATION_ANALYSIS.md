@@ -7,23 +7,24 @@ the commands see [`../evaluation/README.md`](../evaluation/README.md).
 
 ## The current state, in one table
 
-Measured on 2026-10-04 against agent build `66a7358` — NeMo Agent Toolkit 1.9.0,
+Measured on 2026-10-04 against build `dbf1e71` — NeMo Agent Toolkit 1.9.0,
 `qwen3:8b` through a local Ollama, prompt digest `00df8142…`, clean tree,
-provenance `consistent: true`. `grounding` was republished the same day from
-build `1e31b74`, after two scorer fixes, a dataset fix and a new unit check (all
-[below](#research_no_ungrounded_numbers-the-first-live-baseline)); the agent is
-byte-identical across these builds. The published artifact for
-each suite is the first run on its build; the stability column counts every run
-made that day on NAT 1.9, plus one same-day run of the pre-migration NAT 1.8 build
-for comparison (see [below](#the-nat-19-upgrade-measured-like-for-like)).
+provenance `consistent: true`. That build includes the MCP change that returns
+every rate with its percentage
+([below](#the-expense-ratio-was-misstated-by-a-factor-of-a-hundred)) and the
+scorer and dataset fixes made earlier the same day. The published artifact for
+each suite is one full five-suite run on that build; the stability column counts
+every run made that day on NAT 1.9 (the agent prompt was unchanged throughout),
+plus one same-day run of the pre-migration NAT 1.8 build for comparison (see
+[below](#the-nat-19-upgrade-measured-like-for-like)).
 
 | Suite | Result | Gated metric | Stability | Ungated signal worth reading |
 |---|---|---|---|---|
-| `evaluation` | PASS 1.0 | `evaluation_correct` | 1.0 on the single 1.9 run, and on same-day 1.8 | — |
-| `injection` | PASS 1.0 | `injection_resisted` | 1.0 on 3/3 runs on 1.9, and on 1.8 | `injection_no_forecast_claim` 0.833 on the 1.8 run only |
-| `guardrails` | PASS 1.0 | `prompt_robustness_correct` | 1.0 on the single 1.9 run, and on same-day 1.8 | — |
-| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 12/12 runs on 1.9, and on 1.8; has measured 0.909 historically | **`research_units_correct` 0.333 on 3/3 — the expense ratio is misstated 100× (see below)**; `research_no_ungrounded_numbers` 1.0 on 9/9 since its fix; `research_required_facts_present` 0.667 |
-| `policy` | PASS 1.0 | `decision_policy_correct` | 1.0 on 3/3 runs on 1.9, and on 1.8 | — |
+| `evaluation` | PASS 1.0 | `evaluation_correct` | 1.0 on 2/2 runs on 1.9, and on same-day 1.8 | — |
+| `injection` | PASS 1.0 | `injection_resisted` | 1.0 on 4/4 runs on 1.9, and on 1.8 | `injection_no_forecast_claim` 0.833 on two runs (see [the 1.8 comparison](#the-nat-19-upgrade-measured-like-for-like)) |
+| `guardrails` | PASS 1.0 | `prompt_robustness_correct` | 1.0 on 2/2 runs on 1.9, and on same-day 1.8 | — |
+| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 15/15 runs on 1.9, and on 1.8; has measured 0.909 historically | `research_units_correct` 1.0 on 3/3 since the MCP fix (0.333 before it); `research_no_ungrounded_numbers` 1.0 on 12/12 since its fix; `research_required_facts_present` 0.5 |
+| `policy` | PASS 1.0 | `decision_policy_correct` | 1.0 on 4/4 runs on 1.9, and on 1.8 | — |
 
 **Every gate is green, and this page does not let that mean more than it does.**
 Two things changed at once since the previous published figures, and only one of
@@ -38,12 +39,14 @@ The same-day NAT 1.8 run on the current prompt also scores policy at 1.0. The
 policy gate cleared because of the prompt, not because of NAT 1.9. What the
 upgrade did and did not change is measured in its own section below.
 
-**Green gates also coexist with a real answer defect.** The agent states a fund's
-expense ratio a hundred times too small in most answers that give one — "0.0022%"
-for a 0.22% TER — because the tools return rates as bare fractions. No gate
-catches it, because the gates score decisions, and every decision is right. It is
-measured by the new `research_units_correct` metric and explained in
-[the grounding section](#the-grounding-gate-was-measuring-the-wrong-thing).
+**Green gates coexisted with a real answer defect, found and fixed the same day.**
+The agent stated a fund's expense ratio a hundred times too small in 35 of 44 TER
+statements across the suites — "0.0022%" for a 0.22% TER — because the tools
+returned rates as bare fractions. No gate caught it, because the gates score
+decisions, and every decision was right. The MCP server now returns each rate's
+percentage beside it, and the same check over the same suites finds 0 errors in
+39 statements; see
+[below](#the-expense-ratio-was-misstated-by-a-factor-of-a-hundred).
 
 Three categories of failure are still worth separating, because a report that
 mixes them is worse than no report:
@@ -248,7 +251,7 @@ unsupported assertion, no forecast claim, no execution claim, read-only througho
 instead of the context bundle.
 
 **It clears consistently now, and that is still not the same as being fixed.** On
-2026-10-04 the gate measured 1.0 on thirteen runs — twelve on NAT 1.9, one on NAT 1.8 —
+2026-10-04 the gate measured 1.0 on sixteen runs — fifteen on NAT 1.9, one on NAT 1.8 —
 with `research_context_tool_used` at 1.0 every time. Nothing in the grounding path
 changed to bring that about; the same model produced 0.909 on an earlier prompt.
 So the honest report is "passing, historically unstable", and the gate stays where
@@ -277,38 +280,60 @@ count too — its answer listed component points without the fund figures behind
 them, which earlier answers had included. That is model variance on an unchanged
 question, and the metric is right to report it.
 
-**The expense ratio is misstated by a factor of a hundred, almost everywhere.**
-Completeness matched by substring, so a group accepting the raw fraction `0.0022`
-also accepted `TER of 0.0022%` — and the engine's `"ter": 0.0022` is a fraction,
-0.22%. `unit_errors` now checks every percentage and basis-point figure against
-the evidence: a percentage is correct when it is an evidence fraction × 100
-(rounding allowed) or a percentage the evidence itself states, and an error when
-it is instead a fraction written raw with a `%`. A misstated figure no longer
-satisfies a completeness term, and `research_units_correct` reports it. Replayed
-over 39 unit-bearing figures in the captured answers, it raised no false positive.
+### The expense ratio was misstated by a factor of a hundred
 
-What it found is not a scoring detail. The agent states the TER as the raw
-fraction with a percent sign — VWCE-XETRA "0.0022%", CSPX-LSE "0.0007%",
-IEAC-LSE "0.002%", SPXS-LSE "0.0005%" — in four of six grounding answers on all
-three runs, and on every captured run before them, on NAT 1.8 as on 1.9. Outside
-this suite, in the published 1.9 runs, 11 of 12 TER statements in `evaluation`
-and 5 of 7 in `injection` are wrong the same way. Those suites' gates pass,
-because they score decisions rather than figures.
+**Found by a unit check.** Completeness matched by substring, so a group accepting
+the raw fraction `0.0022` also accepted `TER of 0.0022%` — and the engine's
+`"ter": 0.0022` is a fraction, 0.22%. `unit_errors` now checks every percentage
+and basis-point figure against the evidence: a percentage is correct when it is
+an evidence fraction × 100 (rounding allowed) or a percentage the evidence itself
+states, and an error when it is instead a fraction written raw with a `%`. A
+misstated figure no longer satisfies a completeness term, and
+`research_units_correct` reports it. Over 39 unit-bearing figures in earlier
+captured answers it raised no false positive.
 
-The cause is upstream of the model's arithmetic: the MCP read model returns
-`"ter": 0.0022` with no unit, and nothing in the system prompt or the tool
-description says rates are fractions, so the model reads it as a percentage.
-The decision is unaffected — the engine scores the fraction correctly, and every
-decision in every suite is right — but an investor reading the answer is told a
-fund costs a hundredth of what it does. This is the most consequential
-answer-quality defect the suites have surfaced, it is deterministic rather than
-variance, and it is **not fixed by this measurement**: the fix belongs in what
-the tools return. `research_units_correct` stays ungated until it is, because a
-gate that is red on every run for a known cause signals nothing new.
+**What it found.** The agent wrote the TER as the raw fraction with a percent sign
+— VWCE-XETRA "0.0022%", CSPX-LSE "0.0007%", IEAC-LSE "0.002%", SPXS-LSE
+"0.0005%" — on NAT 1.8 as on 1.9, in every suite that states one. The same check,
+applied host-side to every answer in the published 1.9 runs:
 
-On these runs `research_required_facts_present` is 0.667: VWCE-XETRA's TER now
-counts as missing because "0.0022%" no longer satisfies it, alongside the issuer
-names (CSPX-LSE, VWCE-XETRA) and, on these runs, CSPX-LSE's index name.
+| Suite | TER statements | Unit errors before | After the fix |
+|---|---|---|---|
+| `evaluation` | 12 → 11 | 11 | **0** |
+| `grounding` (3 runs each) | 18 → 15 | 12 | **0** |
+| `guardrails` | 7 → 7 | 6 | **0** |
+| `injection` | 7 → 6 | 6 | **0** |
+| `policy` | 0 → 0 | — | — |
+| **Total** | **44 → 39** | **35** | **0** |
+
+Every decision was right throughout — the engine scores the fraction — but an
+investor reading an answer was told a fund costs a hundredth of what it does. No
+gate saw it, because the gates score decisions rather than figures.
+
+**The cause, and the fix.** The MCP read model returned `"ter": 0.0022` with no
+unit, and nothing in the prompt or the tool description said rates are fractions,
+so the model read the fraction as a percentage. The fix is in what the tools
+return, not in the prompt: every rate now travels with a display string —
+`ter_percent: "0.22%"`, `top_10_concentration_percent`, the context-only
+`*_percent` fields, and `observed_percent` on every score factor whose field is a
+rate — plus a one-line units note, and `get_research_context`'s
+`required_elements` asks for rates to be quoted from those fields. The raw
+fractions stay, and the annotation is added at the output boundary, so the rules
+engine and the deterministic baseline are unchanged (`cargo test` regenerates the
+baseline byte-identically). After the fix the stated values are right — VWCE-XETRA
+0.22%, CSPX-LSE 0.07%, IEAC-LSE 0.2% — and `research_units_correct` is 1.0 on
+three of three runs. It stays ungated until it has held for longer than one day.
+
+**One side effect, recorded rather than smoothed over.** With the richer payload,
+the IEAC-LSE grounding answer changed shape on three of three runs: it now lists
+each component's points and weights but no longer names the fund facts behind
+them — in particular not the asset class, "bond", which is the reason its
+profile-fit cap applies. That is why `research_required_facts_present` reads 0.5
+on these runs rather than 0.667; the other misses are the issuer names for
+CSPX-LSE and VWCE-XETRA, as on every earlier run. VWCE-XETRA's answer shifted the
+same way on runs *before* this change, so the payload is not the only cause of
+the style, but for IEAC-LSE the shift coincides with it exactly. The decision and
+caps are still stated correctly; the explanation of *why* is thinner.
 
 **A note on grounding latency.** One republication that day measured p50
 31–35 seconds on three runs, against about 18 seconds before and after it on
@@ -361,7 +386,7 @@ text, half-up or half-even — to the answer's own number of decimal places. Onl
 rounding *to fewer places* counts, so a figure the model derived from several
 evidence values is still reported. Replayed over all 24 answers captured above,
 the IEAC-LSE false positive disappears on every run and VTI-ARCA's `21.28` is
-still flagged on both runs that contained it. Nine fresh runs since, across the
+still flagged on both runs that contained it. Twelve fresh runs since, across the
 later fixes, all measured 1.0: the VTI-ARCA presentation fault simply did not
 recur. That is exactly why it is not promoted into the gate: what the metric now
 catches is real but intermittent, and the label problem above remains.
@@ -687,9 +712,9 @@ cases an interpolated percentile invents a value that was never measured.
   is what reveals it: compare it with the running agent's before reading a number
   as current.
 - **Figures are unit-checked only in `grounding`.** `unit_errors` runs in the
-  grounding scorer; the TER misstatements counted in `evaluation` and `injection`
-  above were found by inspecting their answers, not by a metric those suites
-  report.
+  grounding scorer; the before-and-after counts for the other suites come from
+  applying the same function to their captured answers, not from a metric those
+  suites report.
 - **Prose quality is not scored.** Grounding, completeness, contradiction,
   forecast claims and execution claims are checked deterministically. Whether an
   explanation is *well written* is not, because a judge model scoring fluency
