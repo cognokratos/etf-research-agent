@@ -763,6 +763,54 @@ class UngroundedNumberTests(unittest.TestCase):
         self.assertEqual(self.ungrounded("1234.57", '{"aum": 1234.6}'), ["1234.57"])
 
 
+class GroundingDatasetDateTests(unittest.TestCase):
+    """The data_as_of expectation must accept the date however it is written.
+
+    On 2026-10-04 every grounding answer stated the date, but several wrote
+    "June 30, 2026" while the dataset accepted only "2026-06-30", so
+    research_required_facts_present counted a stated fact as missing. See
+    docs/EVALUATION_ANALYSIS.md.
+    """
+
+    def setUp(self):
+        import json
+
+        from evaluation.scorers import research_grounding_scores
+
+        self.cases = json.loads(
+            (ROOT / "evaluation/datasets/research_grounding.json").read_text(encoding="utf-8")
+        )
+        self.score = research_grounding_scores
+
+    def _facts_present(self, answer, expectations):
+        feedback = {f.name: f.value for f in self.score({"answer": answer, "tool_calls": [], "tool_results": []}, expectations)}
+        return feedback["research_required_facts_present"]
+
+    def _date_cases(self):
+        for case in self.cases:
+            expectations = case["expectations"]
+            groups = expectations.get("required_term_groups") or []
+            if any("2026-06-30" in group for group in groups):
+                yield case["inputs"]["case_id"], expectations, groups
+
+    def test_every_date_group_accepts_the_common_renderings(self):
+        cases = list(self._date_cases())
+        self.assertGreaterEqual(len(cases), 5)
+        for case_id, _, groups in cases:
+            date_group = next(group for group in groups if "2026-06-30" in group)
+            for rendering in ("2026-06-30", "June 30, 2026", "30 June 2026"):
+                with self.subTest(case=case_id, rendering=rendering):
+                    self.assertTrue(any(term.casefold() in rendering.casefold() for term in date_group))
+
+    def test_a_long_form_date_alone_satisfies_the_date_group_only(self):
+        # Every other group is satisfied verbatim; only the date is in long form.
+        for case_id, expectations, groups in self._date_cases():
+            others = " ".join(group[0] for group in groups if "2026-06-30" not in group)
+            with self.subTest(case=case_id):
+                self.assertTrue(self._facts_present(f"{others}. Data as of June 30, 2026.", expectations))
+                self.assertFalse(self._facts_present(f"{others}. Data as of June 30, 2025.", expectations))
+
+
 class MutationDetectionTests(unittest.TestCase):
     """A mutation must be detected from either the start or the end event.
 
