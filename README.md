@@ -37,12 +37,20 @@ Scores measure quality and fit against a dated snapshot; they are not forecasts,
 not advice, and not trade recommendations.
 
 Built on the general-purpose agent template at
-[cognokratos/simple-agent-template](https://github.com/cognokratos/simple-agent-template) —
+[cognokratos/simple-agent-template](https://github.com/cognokratos/simple-agent-template).
+The template teaches and defines the reusable production-agent architecture —
 authentication, guardrails, approvals, tracing, evaluation harness and
-deployment are shared with it; the rules engine, the ETF universe, the tools,
-the prompts and the suites are this application's. See
-[docs/UPSTREAM.md](docs/UPSTREAM.md) for what is still shared and how to port a
-fix from it.
+deployment. This repository is an applied domain example of it: the rules
+engine, the ETF universe, the tools, the prompts and the suites are this
+application's, and it deliberately diverges where the domain needs stronger or
+different policy — approvals are mandatory rather than opt-in, and generic PII
+masking is off because it corrupts ISINs and figures. It is currently
+synchronised with the template's NeMo Agent Toolkit 1.9 infrastructure. See
+[docs/UPSTREAM.md](docs/UPSTREAM.md) for what is still shared, what diverges, and
+how to port a fix from it.
+
+To learn the underlying architecture step by step, start with the
+[simple-agent-template learning path](https://github.com/cognokratos/simple-agent-template/blob/main/docs/LEARNING-PATH.md).
 
 ## Start
 
@@ -168,10 +176,22 @@ it replaced. Where private NAT attributes are still relied on, they are named
 with their removal conditions in
 [OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
-**Dependency trade-off.** NAT 1.8's supported `react_agent` lives in the NAT
-LangChain plugin and exposes no OpenAI-only extra, so this installs the full
-LangChain dependency set. The expensive layer is cached, and the compiler needed
-by `annoy` stays in the builder stage.
+**Dependencies.** The agent runs on NeMo Agent Toolkit 1.9.0. NAT's supported
+`react_agent` lives in the NAT LangChain plugin, and 1.9 split that plugin's
+provider integrations into optional extras, so this installs
+`nvidia-nat-langchain[openai]` rather than the complete set — 29 fewer packages
+than the 1.8 install, including boto3, the OCI SDK, LiteLLM, Milvus and
+HuggingFace. `nemoguardrails` is installed with `[tracing]` only, not the
+template's `[sdd,tracing]`: no Presidio, no spaCy model (see
+[GUARDRAILS.md](docs/GUARDRAILS.md)). The compiler needed by `annoy` stays in
+the builder stage.
+
+**Every direct call to the agent names a principal.** Since the 1.9 upgrade, any
+non-health NAT route answers `401` unless the request carries exactly one
+non-empty `x-authenticated-user-id`. The gateway mints it from the session, so
+the browser path is unchanged; the evaluation harness asserts the synthetic
+`EVALUATION_PRINCIPAL` (default `evaluation-harness`). See
+[SECURITY.md](docs/SECURITY.md#the-agent-requires-an-asserted-identity).
 
 **Licensing.** Source files under `agent/src/` and `gateway/Cargo.toml` declare
 Apache-2.0. There is no root `LICENSE` file; see

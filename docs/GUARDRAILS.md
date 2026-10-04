@@ -141,10 +141,68 @@ change degrades cleanly rather than erroring:
    `sensitive_data_detection` entity list in `rails.config` — `config.yml` is
    asserted to carry both or neither.
 
+## What the LLM verdict actually is
+
+The self-check prompt demands `Yes` or `No`, and `output_parser: is_content_safe`
+turns that into a decision. That parser's real behaviour in nemoguardrails 0.21
+is asserted by `verify_input_guardrails.py` rather than assumed, because the LLM
+half of the input rail rests entirely on it:
+
+* it normalises the response, keeps the **first two tokens**, and matches them
+  against `safe`, `unsafe`, `yes`, `no` — token membership, not substring;
+* **anything it does not recognise is unsafe.** An empty response, a refusal, a
+  reply in another language and `Maybe` all block;
+* the four keywords are tested in that order, so a response whose first two
+  tokens contain the bare word `safe` parses as safe even when negated —
+  **`Not safe` parses as safe.**
+
+That last one is pinned as a known hazard. Three things keep it unreachable
+here: the prompt demands "exactly Yes or No and nothing else", `max_tokens: 4`
+bounds the reply to roughly one word, and the deterministic critical-pattern
+layer blocks the high-risk categories without consulting the model at all. If
+any of those is relaxed, this parser stops being safe to rely on alone.
+
+## Input length bound
+
+The user text is measured before the guard model is asked anything. Over
+`GUARDRAILS_INPUT_MAX_CHARS` (32,000 by default, floor 256) the request is
+refused with `GUARDRAILS_INPUT_OVERSIZE_MESSAGE`, recorded as a blocked input
+decision with `decision_source=deterministic_input_limit`.
+
+Refused, never truncated. A classifier shown a prefix decides about the prefix,
+so truncating would let 32k of benign text followed by the real request be
+classified on the benign part alone. The bound also stops the cheapest possible
+request from being the most expensive one to serve: the guard model runs on
+every request, ahead of all other work. Every shipped input fixture — read-only
+lookups, attacks, and the decision requests that must reach the approval
+boundary — is asserted to sit well under it.
+
+`max_history: 20` in the workflow bounds the number of turns, not their length,
+so it is not a substitute. This mirrors what NAT 1.9 added to its own
+content-safety middleware (`max_content_length`), which this application does
+not otherwise use — see below.
+
+## NAT's own defense middleware: assessed, not adopted
+
+NAT ships a `defense` middleware family (`content_safety_guard`, `pii_defense`,
+`output_verifier_tools`, `pre_tool_verifier`) that overlaps these rails. Each
+was assessed against NAT 1.9.0 and against this application, not only the
+template:
+
+| Component | Verdict |
+| --- | --- |
+| `content_safety_guard` | **Not adopted yet.** Its 1.9 fixes (fail-closed, exact verdicts, bounded input) are properties the input rail here already has by other means. Adopting it needs a real guard model returning `Safe`/`Unsafe`/`Controversial` rather than the general instruct model the self-check prompt targets — worth doing together with the dedicated guard model [LIMITATIONS.md](LIMITATIONS.md) lists under "before production". |
+| `pii_defense` | **Not adopted, and doubly so here.** It is Presidio-based, and this application installs no Presidio for the reason given [above](#why-masking-is-off-here). Independently, it joins buffered chunks with `str(chunk)` — the defect `text_guardrails` exists to correct. |
+| `output_verifier_tools` | **Not applicable.** It asks an LLM whether a tool result is correct. The tool results here are the deterministic engine's output, and the engine — not a second model — is what decides whether a decision is correct. |
+| `pre_tool_verifier` | **Not adopted.** Unlike the template, this application *does* have state-changing tools, but they are protected deterministically: every one pauses for a signed human approval, and the MCP server re-verifies the token, recomputes the engine decision and re-checks hard constraints at the point of mutation. An LLM screen of tool arguments would add a probabilistic layer in front of a deterministic one, and in 1.9.0 it defaults to `fail_closed: false`. |
+
 ## Compatibility with the pinned release
 
-`nvidia-nat-security[guardrails]==1.8.0` constrains `nemoguardrails` to
-`>=0.11,<0.22`, so the pin is 0.21.0. That release has three defects on the
+`nvidia-nat-security[guardrails]==1.9.0` constrains `nemoguardrails` to
+`>=0.11,<0.22`, so the pin is 0.21.0. **The 1.9 upgrade did not change this** —
+the requirement is byte-identical to 1.8.0's, and NAT's generic Guardrails
+middleware still stringifies streamed chunks with `str(chunk)`, which is why
+`text_guardrails` remains. That release has three defects on the
 streaming path, all fixed upstream in 0.23.0:
 
 1. `detect_regex_pattern` is declared with no `output_mapping`, so NeMo's
@@ -182,6 +240,8 @@ Guardrails pin to `>=0.23` and `requirements.txt` is upgraded.
 | `GUARDRAILS_INPUT_DETERMINISTIC_FALLBACK` | `true` | Deterministic critical-pattern blocking |
 | `GUARDRAILS_INPUT_READ_ONLY_ALLOW_OVERRIDE` | `true` | Allow templates may correct an LLM false positive |
 | `GUARDRAILS_INPUT_BLOCK_MESSAGE` | a refusal | What a blocked user sees |
+| `GUARDRAILS_INPUT_MAX_CHARS` | `32000` | Ceiling on the user text handed to the guard model; a longer message is refused, never truncated. Floor of 256. |
+| `GUARDRAILS_INPUT_OVERSIZE_MESSAGE` | a refusal | What a user over that bound sees |
 | `GUARDRAILS_RAIL_POOL_SIZE` | `4` | Concurrent rail evaluations before queueing |
 | `GUARDRAILS_TRACE_CAPTURE_CONTENT` | `true` | Prompt/answer text on guardrail spans |
 | `GUARDRAILS_TRACE_CAPTURE_RAW_OUTPUT` | `false` | See below |
@@ -200,7 +260,8 @@ text into the trace backend.
 ## Verifying it
 
 ```
-make verify-input-guardrails    # decision precedence, history forgery, env parsing
+make verify-input-guardrails    # decision precedence, history forgery, env parsing,
+                                # input bound, and the pinned Yes/No verdict parser
 make verify-output-guardrails   # config invariants, patterns, masking behaviour
 make verify-rails               # the real NeMo runtime, blocking and concurrency
 make verify-guardrails          # all three

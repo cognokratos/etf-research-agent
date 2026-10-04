@@ -138,7 +138,14 @@ changes.
 | `GATEWAY_SESSION_TTL_SECONDS` | `28800` | |
 | `GATEWAY_MAX_STREAMS_PER_SESSION` | `4` | |
 | `GATEWAY_UPSTREAM_TIMEOUT_SECONDS` | `10` | Non-streaming calls only |
-| `HITL_APPROVAL_SECRET` | **unset** | Unset keeps the stack read-only; see [APPROVALS.md](APPROVALS.md) |
+| `HITL_APPROVAL_SECRET` | dev value | **Required**, ≥ 24 characters, identical for agent and MCP. Unlike the template there is no read-only mode: the MCP server refuses to start without it. See [APPROVALS.md](APPROVALS.md) |
+| `EVALUATION_PRINCIPAL` | `evaluation-harness` | Identity the evaluation harness asserts to the agent. Every direct caller must assert exactly one; see [SECURITY.md](SECURITY.md#the-agent-requires-an-asserted-identity) |
+
+The agent's trusted identity header is set in `agent/config.yml`
+(`general.front_end.identity_header`) rather than by environment variable,
+because it is a property of the deployment's trust boundary rather than a knob:
+changing it means changing which header the agent believes, and that only makes
+sense together with the proxy that mints it.
 
 Guardrail and telemetry settings are in [GUARDRAILS.md](GUARDRAILS.md) and
 [OBSERVABILITY.md](OBSERVABILITY.md). Evaluation bindings are in
