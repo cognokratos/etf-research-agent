@@ -67,6 +67,15 @@ is not anonymity: anyone who knows a subject can recompute it and link that
 person's traces. The raw subject and username are redacted from span metadata in
 both modes. See [OBSERVABILITY.md](OBSERVABILITY.md#per-user-attribution).
 
+**Answers misstate the expense ratio by a factor of a hundred.** The MCP read
+model returns rates as bare fractions (`"ter": 0.0022` is a 0.22% TER) and nothing
+tells the model so; it routinely writes "0.0022%". Measured on 2026-10-04: four of
+six grounding answers on every run, 11 of 12 TER statements in the `evaluation`
+suite, 5 of 7 in `injection`. Decisions are unaffected — the engine scores the
+fraction — but the stated figure is wrong. `research_units_correct` measures it;
+the fix belongs in what the tools return. See
+[EVALUATION_ANALYSIS.md](EVALUATION_ANALYSIS.md).
+
 **Sessions are in memory.** One gateway instance, and a restart logs everyone
 out.
 

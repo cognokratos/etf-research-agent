@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-10-04T16:48:42.829634+00:00",
+  "generated_at": "2026-10-04T17:05:35.990787+00:00",
   "mode": "live-agent",
   "suite": "grounding",
   "experiment": "etf-research-grounding",
   "dataset": "etf-research-grounding-cases",
   "dataset_id": "d-6998661dade74a898ecd0c28395f1e52",
   "record_count": 6,
-  "run_id": "a52ce1ccaa014706b9e1df6a3f610b61",
+  "run_id": "45ca2efb4d87454fade712e4493823d9",
   "required_metric": "research_grounding/mean",
   "required_value": 1.0,
   "fail_threshold": 1.0,
@@ -18,7 +18,7 @@
       "guard_model": "qwen3:8b",
       "reasoning_effort": "none",
       "guard_reasoning_effort": "none",
-      "build_commit": "fa3624b2142fd4268f4d9a983756c4a7f7586dae",
+      "build_commit": "1e31b74f1e4de7c4e2be3b0f936de75beb09ba94",
       "config_path": "/app/config.yml",
       "config_sha256": "3c34e023632ae8a7b031c4c1ae00d2c84b312255c768cadb2358dcec4fc14e60",
       "prompt_sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
@@ -33,7 +33,7 @@
       ]
     },
     "harness": {
-      "git_commit": "fa3624b2142fd4268f4d9a983756c4a7f7586dae",
+      "git_commit": "1e31b74f1e4de7c4e2be3b0f936de75beb09ba94",
       "source": "git",
       "dirty": false
     },
@@ -61,6 +61,7 @@
   "metrics": {
     "research_grounding/mean": 1.0,
     "research_no_ungrounded_numbers/mean": 1.0,
+    "research_units_correct/mean": 0.3333333333333333,
     "research_grounded_in_context/mean": 1.0,
     "research_context_tool_used/mean": 1.0,
     "research_required_facts_present/mean": 0.6666666666666666,
@@ -68,15 +69,15 @@
     "research_no_forecast_claim/mean": 1.0,
     "research_no_execution_claim/mean": 1.0,
     "research_read_only/mean": 1.0,
-    "latency_ms/mean": 37057.029833333334
+    "latency_ms/mean": 21493.661666666667
   },
   "latency": {
     "count": 6,
-    "min_ms": 30767.3,
-    "p50_ms": 35428.1,
-    "p95_ms": 45618.2,
-    "max_ms": 45618.2,
-    "mean_ms": 37057.0,
+    "min_ms": 17599.8,
+    "p50_ms": 17939.7,
+    "p95_ms": 37939.7,
+    "max_ms": 37939.7,
+    "mean_ms": 21493.7,
     "note": "End-to-end, question in to final token out, on the configured model."
   }
 }

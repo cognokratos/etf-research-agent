@@ -10,7 +10,7 @@ the commands see [`../evaluation/README.md`](../evaluation/README.md).
 Measured on 2026-10-04 against agent build `66a7358` — NeMo Agent Toolkit 1.9.0,
 `qwen3:8b` through a local Ollama, prompt digest `00df8142…`, clean tree,
 provenance `consistent: true`. `grounding` was republished the same day from
-build `fa3624b`, after a scorer fix and a dataset fix (both
+build `1e31b74`, after two scorer fixes, a dataset fix and a new unit check (all
 [below](#research_no_ungrounded_numbers-the-first-live-baseline)); the agent is
 byte-identical across these builds. The published artifact for
 each suite is the first run on its build; the stability column counts every run
@@ -22,7 +22,7 @@ for comparison (see [below](#the-nat-19-upgrade-measured-like-for-like)).
 | `evaluation` | PASS 1.0 | `evaluation_correct` | 1.0 on the single 1.9 run, and on same-day 1.8 | — |
 | `injection` | PASS 1.0 | `injection_resisted` | 1.0 on 3/3 runs on 1.9, and on 1.8 | `injection_no_forecast_claim` 0.833 on the 1.8 run only |
 | `guardrails` | PASS 1.0 | `prompt_robustness_correct` | 1.0 on the single 1.9 run, and on same-day 1.8 | — |
-| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 9/9 runs on 1.9, and on 1.8; has measured 0.909 historically | `research_no_ungrounded_numbers` 1.0 on 6/6 runs after the scorer fix; `research_required_facts_present` 0.667 on 3/3 runs after the date fix — genuine omissions |
+| `grounding` | PASS 1.0 | `research_grounding` | 1.0 on 12/12 runs on 1.9, and on 1.8; has measured 0.909 historically | **`research_units_correct` 0.333 on 3/3 — the expense ratio is misstated 100× (see below)**; `research_no_ungrounded_numbers` 1.0 on 9/9 since its fix; `research_required_facts_present` 0.667 |
 | `policy` | PASS 1.0 | `decision_policy_correct` | 1.0 on 3/3 runs on 1.9, and on 1.8 | — |
 
 **Every gate is green, and this page does not let that mean more than it does.**
@@ -37,6 +37,13 @@ them is the toolkit upgrade:
 The same-day NAT 1.8 run on the current prompt also scores policy at 1.0. The
 policy gate cleared because of the prompt, not because of NAT 1.9. What the
 upgrade did and did not change is measured in its own section below.
+
+**Green gates also coexist with a real answer defect.** The agent states a fund's
+expense ratio a hundred times too small in most answers that give one — "0.0022%"
+for a 0.22% TER — because the tools return rates as bare fractions. No gate
+catches it, because the gates score decisions, and every decision is right. It is
+measured by the new `research_units_correct` metric and explained in
+[the grounding section](#the-grounding-gate-was-measuring-the-wrong-thing).
 
 Three categories of failure are still worth separating, because a report that
 mixes them is worse than no report:
@@ -103,7 +110,7 @@ The current figures are in `evaluation/results/<suite>-latest.json`, each naming
 the agent build, the prompt version and the model that produced it. Reproduce with
 `make eval-all`. A single run of five suites takes roughly fifteen minutes on a
 local `qwen3:8b` on the machine these were measured on; latency is reported per
-suite as a distribution. p50 sits between 17 and 35 seconds for every suite that
+suite as a distribution. p50 sits between 17 and 30 seconds for every suite that
 answers — every request crosses an input rail, a ReAct loop with tool calls, and a
 streamed output rail — and around 5 seconds for `guardrails`, where most cases are
 refused by the input rail before the agent runs.
@@ -241,7 +248,7 @@ unsupported assertion, no forecast claim, no execution claim, read-only througho
 instead of the context bundle.
 
 **It clears consistently now, and that is still not the same as being fixed.** On
-2026-10-04 the gate measured 1.0 on ten runs — nine on NAT 1.9, one on NAT 1.8 —
+2026-10-04 the gate measured 1.0 on thirteen runs — twelve on NAT 1.9, one on NAT 1.8 —
 with `research_context_tool_used` at 1.0 every time. Nothing in the grounding path
 changed to bring that about; the same model produced 0.909 on an earlier prompt.
 So the honest report is "passing, historically unstable", and the gate stays where
@@ -270,18 +277,44 @@ count too — its answer listed component points without the fund figures behind
 them, which earlier answers had included. That is model variance on an unchanged
 question, and the metric is right to report it.
 
-One known weakness remains in the opposite direction. Matching is by substring,
-so a group that accepts the raw fraction `0.0022` also accepts `TER of 0.0022%` —
-which is wrong by a factor of a hundred (the fraction is 0.22%). Answers that
-wrote exactly that were counted complete. Completeness here means "the expected
-figure appears", not "it appears with the right unit".
+**The expense ratio is misstated by a factor of a hundred, almost everywhere.**
+Completeness matched by substring, so a group accepting the raw fraction `0.0022`
+also accepted `TER of 0.0022%` — and the engine's `"ter": 0.0022` is a fraction,
+0.22%. `unit_errors` now checks every percentage and basis-point figure against
+the evidence: a percentage is correct when it is an evidence fraction × 100
+(rounding allowed) or a percentage the evidence itself states, and an error when
+it is instead a fraction written raw with a `%`. A misstated figure no longer
+satisfies a completeness term, and `research_units_correct` reports it. Replayed
+over 39 unit-bearing figures in the captured answers, it raised no false positive.
 
-**A note on the published grounding latency.** The republished artifact records
-p50 35 seconds; the same suite measured about 18 seconds earlier that day. The
-requests were byte-identical and the answers shorter, so the difference is the
-model host — `qwen3:8b` served by a local Ollama on a machine under sustained
-load — not the build. It is published as measured, and is one more reason the
-latency distribution belongs to a run, not to the system.
+What it found is not a scoring detail. The agent states the TER as the raw
+fraction with a percent sign — VWCE-XETRA "0.0022%", CSPX-LSE "0.0007%",
+IEAC-LSE "0.002%", SPXS-LSE "0.0005%" — in four of six grounding answers on all
+three runs, and on every captured run before them, on NAT 1.8 as on 1.9. Outside
+this suite, in the published 1.9 runs, 11 of 12 TER statements in `evaluation`
+and 5 of 7 in `injection` are wrong the same way. Those suites' gates pass,
+because they score decisions rather than figures.
+
+The cause is upstream of the model's arithmetic: the MCP read model returns
+`"ter": 0.0022` with no unit, and nothing in the system prompt or the tool
+description says rates are fractions, so the model reads it as a percentage.
+The decision is unaffected — the engine scores the fraction correctly, and every
+decision in every suite is right — but an investor reading the answer is told a
+fund costs a hundredth of what it does. This is the most consequential
+answer-quality defect the suites have surfaced, it is deterministic rather than
+variance, and it is **not fixed by this measurement**: the fix belongs in what
+the tools return. `research_units_correct` stays ungated until it is, because a
+gate that is red on every run for a known cause signals nothing new.
+
+On these runs `research_required_facts_present` is 0.667: VWCE-XETRA's TER now
+counts as missing because "0.0022%" no longer satisfies it, alongside the issuer
+names (CSPX-LSE, VWCE-XETRA) and, on these runs, CSPX-LSE's index name.
+
+**A note on grounding latency.** One republication that day measured p50
+31–35 seconds on three runs, against about 18 seconds before and after it on
+byte-identical requests — the model host under load, not the build. The current
+artifact is back at 18 seconds. It is one more reason the latency distribution
+belongs to a run, not to the system.
 
 ### `research_no_ungrounded_numbers`: the first live baseline
 
@@ -328,9 +361,9 @@ text, half-up or half-even — to the answer's own number of decimal places. Onl
 rounding *to fewer places* counts, so a figure the model derived from several
 evidence values is still reported. Replayed over all 24 answers captured above,
 the IEAC-LSE false positive disappears on every run and VTI-ARCA's `21.28` is
-still flagged on both runs that contained it. Six fresh runs since — three on the
-scorer fix, three more after the dataset fix — all measured 1.0: the VTI-ARCA
-presentation fault simply did not recur. That is exactly why it is not promoted into the gate: what the metric now
+still flagged on both runs that contained it. Nine fresh runs since, across the
+later fixes, all measured 1.0: the VTI-ARCA presentation fault simply did not
+recur. That is exactly why it is not promoted into the gate: what the metric now
 catches is real but intermittent, and the label problem above remains.
 
 ---
@@ -653,6 +686,10 @@ cases an interpolated percentile invents a value that was never measured.
   artifacts described an older prompt for months. `provenance.agent.prompt_sha256`
   is what reveals it: compare it with the running agent's before reading a number
   as current.
+- **Figures are unit-checked only in `grounding`.** `unit_errors` runs in the
+  grounding scorer; the TER misstatements counted in `evaluation` and `injection`
+  above were found by inspecting their answers, not by a metric those suites
+  report.
 - **Prose quality is not scored.** Grounding, completeness, contradiction,
   forecast claims and execution claims are checked deterministically. Whether an
   explanation is *well written* is not, because a judge model scoring fluency
