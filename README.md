@@ -49,8 +49,17 @@ synchronised with the template's NeMo Agent Toolkit 1.9 infrastructure. See
 [docs/UPSTREAM.md](docs/UPSTREAM.md) for what is still shared, what diverges, and
 how to port a fix from it.
 
-To learn the underlying architecture step by step, start with the
-[simple-agent-template learning path](https://github.com/cognokratos/simple-agent-template/blob/main/docs/LEARNING-PATH.md).
+## Learn
+
+The two repositories form one curriculum: the template teaches how to engineer a
+production AI agent; this one teaches how to engineer a governed decision system
+around it.
+
+| If you are… | Start with |
+| --- | --- |
+| new to production agents | the [simple-agent-template learning path](https://github.com/cognokratos/simple-agent-template/blob/main/docs/LEARNING-PATH.md) |
+| already fluent in that architecture | [Applied decision engineering](docs/APPLIED-LEARNING-PATH.md): policy as data, uncertainty, evidence contracts, decision authority, policy-versioned audit, system-level evaluation — with labs on this codebase |
+| here to run or use the application | [Start](#start), then [DEMO.md](docs/DEMO.md) and the reference documents below |
 
 ## Start
 
@@ -116,6 +125,7 @@ nothing was applied.
 
 | Document | For |
 | --- | --- |
+| [APPLIED-LEARNING-PATH.md](docs/APPLIED-LEARNING-PATH.md) | The applied curriculum: lessons, labs, case studies and challenges (learning material, not reference) |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | The request path, trust boundaries, network segmentation, where the model is and is not trusted |
 | [SECURITY.md](docs/SECURITY.md) | Each control, why it exists, and how to check it |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Every setting, and what the shipped model does and does not handle |

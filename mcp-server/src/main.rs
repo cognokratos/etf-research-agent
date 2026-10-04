@@ -30,6 +30,8 @@ mod store;
 
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod lab;
 
 use crate::approval::MIN_SECRET_LENGTH;
 

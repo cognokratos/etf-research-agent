@@ -117,18 +117,22 @@ leniency on expiry would extend the window an approval stays spendable.
 
 ## Transactional integrity
 
-One transaction, in this order:
+One transaction, in this order (`commit_evaluation`, `shortlist_etf` and
+`assign_etf` in `mcp-server/src/server.rs`):
 
-1. consume the nonce (primary key, so a concurrent second spend conflicts);
-2. lock the resource row and re-derive the authoritative state;
-3. re-validate the transition against backend policy;
+1. lock the resource row (`SELECT … FOR UPDATE`) and re-derive the
+   authoritative state from it;
+2. verify the token against that state, and re-validate the transition against
+   backend policy;
+3. consume the nonce (primary key, so a second spend conflicts);
 4. apply the mutation;
 5. append the audit record.
 
 Any failure rolls all of it back, **including the nonce**. That matters in both
-directions: consuming first means two concurrent spends cannot both proceed, and
-rolling back on failure means a refused approval is not silently burned. The
-human's decision is either applied and recorded, or nothing happened at all.
+directions: the row lock serialises concurrent spends against one resource and
+the nonce's primary key refuses the second one, and rolling back on failure means
+a refused approval is not silently burned. The human's decision is either applied
+and recorded, or nothing happened at all.
 
 A refusal is a `200` with `ok: false`, not an error. A legitimately approved
 change can still be refused by policy, and the caller must be able to tell the

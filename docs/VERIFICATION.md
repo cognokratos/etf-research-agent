@@ -27,7 +27,7 @@ transcript. Where a control cannot be checked automatically, it says so.
 | Control | Proven by |
 |---|---|
 | A non-UCITS fund is rejected however well it scores | `rules-test` — `VTI-ARCA` scores 88 and rejects |
-| Every non-UCITS fund in the snapshot rejects | `rules-test` — 6/6 |
+| Every non-UCITS fund in the snapshot rejects | `rules-test` — 5/5 |
 | A constraint only applies when the profile enables it | `rules-test` — disabling `require_ucits` restores the score decision |
 | A non-bypassable constraint blocks every decision above reject, for every actor | `rules-test` — both decisions × both values of the override flag |
 | A record that cannot answer a constraint does not satisfy it | `rules-test` — a boolean requirement against a text field fails closed |

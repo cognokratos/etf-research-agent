@@ -802,6 +802,11 @@ async def etf_commit_evaluation(config: CommitEvaluationConfig, builder: Builder
         # authorising an investment decision has to be able to see who is saying
         # what. Collapsing the engine and the model into one "system decision" is
         # how the model's opinion ends up being ratified as policy.
+        #
+        # DECISION-AUTHORITY: request.rules_decision is the model's report of the
+        # engine, not the engine. It is signed as expected_choice and verified by
+        # the MCP against a fresh recomputation. See
+        # docs/applied/05-recommendation-authority-and-consent.md.
         lines = [
             f"ETF: {etf_id}",
             "Action: commit review decision",

@@ -48,12 +48,17 @@ below, and say plainly that it was adapted rather than cherry-picked, since
 | NAT version | 1.9.0 (`nemoguardrails` 0.21.0, unchanged) |
 | Porting method | Semantic/manual port of the infrastructure changes, on branch `upgrade/template-1.9`. Not a cherry-pick of the commit and not a merge: hunks were applied with a three-way merge where a file was still shared, and reimplemented where it was not. |
 
-`upstream/main` has since advanced to `614f3fe` (*Tutorial (#2)*). That commit is
+`upstream/main` has since advanced past `614f3fe` (*Tutorial (#2)*). That commit is
 the template's learning layer — learning path, concept pages, labs, a
 docs-link checker — plus four source comments pointing into it. It changes no
-runtime behaviour and is **deliberately not ported**: this repository is an
-applied example and links to the curriculum rather than carrying a copy. The
-infrastructure synchronisation point is therefore `af29ce0`, not `upstream/main`.
+runtime behaviour, and its curriculum is **deliberately not ported**: this
+repository links to it and carries its own applied curriculum
+([APPLIED-LEARNING-PATH.md](APPLIED-LEARNING-PATH.md)), which starts where the
+template's ends. The docs-link checker *was* taken, byte-identical —
+`scripts/verify_docs.py` and `scripts/verify_docs_test.py`, run by
+`make docs-check` — because a curriculum that points into code needs the same
+drift check. The infrastructure synchronisation point is therefore still
+`af29ce0`, not `upstream/main`.
 
 This records one synchronisation, not a subscription. Later template changes are
 not in this repository until someone ports them.
@@ -92,7 +97,7 @@ workaround module was deleted.
 | Ticket-domain wording, `EVALUATION_TOOL_NAMES` defaults | Domain vocabulary; the ETF values were kept. |
 | `docs/EXTENDING.md`, `docs/TEST-SCENARIOS.md` | Not carried by this repository. Their substance — why each workaround survives 1.9, and the four auth cases — is in [LIMITATIONS.md](LIMITATIONS.md), [SECURITY.md](SECURITY.md) and [VERIFICATION.md](VERIFICATION.md). |
 | The Presidio OOM note in `LIMITATIONS.md` | Presidio is not installed here, so the failure mode cannot occur. |
-| `614f3fe` tutorial layer and its source comments | Educational; see above. |
+| `614f3fe` tutorial layer and its source comments | Educational; see above. Only the docs-link checker was taken. |
 
 ### Where this application went further than the template
 
@@ -138,7 +143,7 @@ upstream fix by cherry-pick:
 | Evaluation core | `evaluation/runner.py`, `evaluation/datasets.py` |
 | Gateway core | `gateway/src/http.rs`, `gateway/src/state.rs` |
 | UI | `ui/app/api/gateway/_proxy.ts`, `auth/{callback,login,session}/route.ts`, `ui/Dockerfile`, build config and `package-lock.json`, `ui/scripts/verify-nat-wire.mjs` |
-| Checks | `scripts/verify_security_config.py`, `verify_mcp_auth.py`, `verify_evaluation_artifacts*.py`, `verify_live_evaluation_upload_condition_test.py`, `verify_pii_buffer_env_test.py`, `inspect_mlflow_traces.py` |
+| Checks | `scripts/verify_security_config.py`, `verify_mcp_auth.py`, `verify_evaluation_artifacts*.py`, `verify_live_evaluation_upload_condition_test.py`, `verify_pii_buffer_env_test.py`, `inspect_mlflow_traces.py`, `verify_docs.py`, `verify_docs_test.py` (the last two against `upstream/main`, not `af29ce0`) |
 | MCP inspector | `mcp-server/inspector/{Dockerfile,entrypoint.sh}` |
 
 Shared in substance but **no longer byte-identical**, so an upstream change

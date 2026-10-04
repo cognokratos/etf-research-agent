@@ -28,6 +28,9 @@ pub const DECISIONS: [&str; 3] = ["reject", "research", "shortlist"];
 /// Every ETF field the specification is allowed to score on. Validated at load
 /// so a typo in `rules_spec.json` fails at boot rather than silently removing a
 /// component's weight from every evaluation.
+// POLICY-BOUNDARY: which facts exist, and what the operators mean, is code; how
+// each fact counts is data in rules_spec.json. See
+// docs/applied/01-policy-is-a-program.md.
 pub const SCORABLE_FIELDS: [&str; 11] = [
     "asset_class",
     "region",
@@ -1370,6 +1373,9 @@ pub struct DecisionAuthority {
     pub human_override_decision: Option<String>,
 }
 
+// DECISION-AUTHORITY: the engine's decision is the default, the model's is
+// advisory in both directions, and only a human override with a rationale moves
+// away from it. See docs/applied/05-recommendation-authority-and-consent.md.
 /// Reconcile an approved decision against the deterministic authority.
 ///
 /// Pure, so every case in the trust matrix is unit-testable without a database,

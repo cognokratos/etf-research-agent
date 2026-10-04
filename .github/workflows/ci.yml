@@ -53,6 +53,14 @@ jobs:
       - name: ETF fixtures, investor profile, rules spec and labelled cases
         run: python3 scripts/validate_etf_fixtures.py
 
+      # Relative links, heading anchors and `make <target>` references in every
+      # Markdown file. The checker's own negative tests run first, so a checker
+      # that passes everything cannot pass here. External URLs are not fetched.
+      - name: Documentation links, anchors and make targets
+        run: |
+          python3 scripts/verify_docs_test.py
+          python3 scripts/verify_docs.py
+
       - name: Security-critical source wiring
         run: python3 scripts/verify_security_sources.py
 
