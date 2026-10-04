@@ -729,6 +729,39 @@ class UngroundedNumberTests(unittest.TestCase):
     def test_nothing_is_grounded_against_empty_evidence(self):
         self.assertEqual(self.ungrounded("score 683", ""), ["683"])
 
+    # Rounding. The first live baseline (2026-10-04) flagged a correct figure on
+    # every run: the engine serialises 9 x 0.85 as 7.6499999999999995 and the
+    # model, correctly, says 7.65. See docs/EVALUATION_ANALYSIS.md.
+
+    def test_float_serialisation_noise_rounded_by_the_answer_is_grounded(self):
+        evidence = '{"code": "STRUCT-R-SAMPLED", "points": 7.6499999999999995, "weight": 9}'
+        self.assertEqual(self.ungrounded("Fund Structure: 7.65/9", evidence), [])
+
+    def test_rounding_to_fewer_places_is_grounded(self):
+        evidence = '{"ratio": 0.123456, "aum_musd": 1234.6, "td": 2.675}'
+        for answer in ("ratio 0.12", "ratio 0.1235", "about 1235 million", "TD 2.68"):
+            with self.subTest(answer=answer):
+                self.assertEqual(self.ungrounded(answer, evidence), [])
+
+    def test_a_figure_the_model_computed_is_still_reported(self):
+        # GROUND-VTI-ARCA, run 2: "normalized contribution" 21.28 = 20 / 0.94,
+        # derived by the model and presented beside the engine's figures. Every
+        # input to that arithmetic is in the evidence; the result is not.
+        evidence = (
+            '{"components": {"cost_efficiency": 21}, "available_weight": 94, '
+            '"factors": [{"points": 20.0, "weight": 20, "fraction": 1.0}]}'
+        )
+        self.assertEqual(self.ungrounded("Cost Efficiency | 20.0 | 21.28", evidence), ["21.28"])
+
+    def test_rounding_is_to_the_answers_own_precision_only(self):
+        evidence = '{"points": 7.6499999999999995, "score": 17.6499999999999995}'
+        # Wrong rounding, and a double rounding (17.65 -> 17.7), are not the
+        # evidence value at the precision the answer claims.
+        self.assertEqual(self.ungrounded("7.66", evidence), ["7.66"])
+        self.assertEqual(self.ungrounded("17.7", evidence), ["17.7"])
+        # Claiming more precision than the evidence has is not rounding.
+        self.assertEqual(self.ungrounded("1234.57", '{"aum": 1234.6}'), ["1234.57"])
+
 
 class MutationDetectionTests(unittest.TestCase):
     """A mutation must be detected from either the start or the end event.

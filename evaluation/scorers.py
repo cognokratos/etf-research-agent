@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from mlflow.entities import Feedback
@@ -268,6 +269,34 @@ def _numeric_value(token: str) -> float | None:
         return None
 
 
+def _decimal_places(token: str) -> int:
+    """How many decimal places a figure is written to (``7.65`` -> 2, ``1,235`` -> 0)."""
+
+    cleaned = token.replace(",", "").replace("_", "").rstrip(".")
+    return len(cleaned.split(".", 1)[1]) if "." in cleaned else 0
+
+
+def _rounds_to(evidence_text: str, places: int, value: Decimal) -> bool:
+    """Whether an evidence figure, rounded to ``places``, is exactly ``value``.
+
+    Evidence is rounded from its *text*, not from a float: ``7.6499999999999995``
+    is how a binary float of 9 x 0.85 serialises, and a person reading it writes
+    7.65. Half-up and half-even are both accepted, because both are how people
+    and libraries round; nothing looser is.
+    """
+
+    try:
+        exact = Decimal(evidence_text)
+    except InvalidOperation:
+        return False
+    if -exact.as_tuple().exponent <= places:
+        # The evidence has no more precision than the answer claims, so this is
+        # not rounding; exact equality is checked separately.
+        return False
+    quantum = Decimal(1).scaleb(-places)
+    return any(exact.quantize(quantum, rounding=mode) == value for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN))
+
+
 def ungrounded_numbers(answer: str, evidence: str) -> list[str]:
     """Numbers in the answer that appear nowhere in the tool results.
 
@@ -281,12 +310,19 @@ def ungrounded_numbers(answer: str, evidence: str) -> list[str]:
 
     Short runs are skipped: a one- or two-digit figure collides with ordinals,
     list numbering and small counts far too often to carry signal.
+
+    A figure is also grounded when it is an evidence value correctly rounded to
+    the answer's own precision — ``7.65`` for an engine value serialised as
+    ``7.6499999999999995``. Only rounding *to fewer places* counts: a figure the
+    model computed from evidence values (``21.28`` = 20 / 0.94) is still
+    reported, because no single evidence value rounds to it.
     """
 
     evidence_digits = re.sub(r"\D", "", evidence)
+    evidence_texts = _NUMBER.findall(evidence)
     evidence_values = {
         value
-        for value in (_numeric_value(match) for match in _NUMBER.findall(evidence))
+        for value in (_numeric_value(match) for match in evidence_texts)
         if value is not None
     }
 
@@ -300,6 +336,14 @@ def ungrounded_numbers(answer: str, evidence: str) -> list[str]:
             continue
         if digits in evidence_digits:
             continue
+        if value is not None:
+            places = _decimal_places(token)
+            try:
+                written = Decimal(token.replace(",", "").replace("_", "").rstrip("."))
+            except InvalidOperation:
+                written = None
+            if written is not None and any(_rounds_to(text, places, written) for text in evidence_texts):
+                continue
         ungrounded.append(token)
     return ungrounded
 
@@ -490,14 +534,16 @@ def research_grounding_scores(outputs: Any, expectations: dict[str, Any]) -> lis
     forecasts = forecast_claims(answer)
     executions = execution_claims(answer)
     # Figures the answer states that no tool returned. Reported on every run and
-    # deliberately NOT part of the gate below: inventing an expense ratio is a
-    # grounding failure by this application's own stated policy, but the first
-    # live baseline (2026-10-04) shows it does not yet hold for a reason that is
-    # not the model's: exact value comparison flags a correctly rounded figure
-    # (``7.65`` against an engine value serialised as ``7.6499999999999995``) on
-    # every run. Adding that to a gate would pin it red on a serialisation
-    # artifact. Promote it into `grounded` once rounding is tolerated here or the
-    # engine stops emitting float noise. See docs/EVALUATION_ANALYSIS.md.
+    # deliberately NOT part of the gate below. The first live baseline
+    # (2026-10-04) found one scorer false positive -- a correctly rounded figure
+    # against float serialisation noise, now tolerated by `ungrounded_numbers` --
+    # and one real, intermittent model fault: a figure the model computed and
+    # presented beside the engine's (2 of 3 runs, decision unaffected). Gating on
+    # it would make the grounding gate flip between runs on a presentation fault
+    # rather than signal a regression. It also only tests that a number appears
+    # *somewhere* in the evidence, not that it is quoted under the right label.
+    # Promote it once a stronger check and a stable baseline exist. See
+    # docs/EVALUATION_ANALYSIS.md.
     invented_numbers = ungrounded_numbers(answer, _tool_result_text(result))
 
     # Grounding and completeness are reported separately, and only grounding is
