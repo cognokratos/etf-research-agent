@@ -43,6 +43,10 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
 # and the rails block in config.yml.
 
 COPY pyproject.toml /app/pyproject.toml
+# Licence documents named by project.license-files; the build fails without them,
+# and the installed .dist-info/licenses/ copies travel with /opt/venv.
+COPY LICENSE THIRD_PARTY_NOTICES.md /app/
+COPY LICENSES /app/LICENSES
 COPY src /app/src
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     uv pip install --python /opt/venv/bin/python /app

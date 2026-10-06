@@ -240,3 +240,11 @@ declarations and NVIDIA's copyright notices, which is why `agent/pyproject.toml`
 declares `MIT AND Apache-2.0`. See
 [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and
 [`LICENSES/Apache-2.0.txt`](../LICENSES/Apache-2.0.txt).
+
+The `nat-streaming-react` distribution built from `agent/` (and the agent image)
+carries the licence documents too. `agent/LICENSE`, `agent/LICENSES/Apache-2.0.txt`
+and `agent/THIRD_PARTY_NOTICES.md` are byte-identical copies of the root files,
+which stay authoritative, and are listed in `project.license-files`.
+`make license-check` fails if a copy drifts. `make package-license-check` builds the
+sdist, the wheel, a wheel from the sdist and an installed copy, and checks each for
+the complete texts.
