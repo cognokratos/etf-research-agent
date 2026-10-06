@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES.
 # SPDX-License-Identifier: Apache-2.0
+# Modified from NVIDIA NeMo Agent Toolkit source for this project; see THIRD_PARTY_NOTICES.md.
 """ReAct agent workflow that preserves native-tool final-answer streaming.
 
 NAT's built-in ReAct stream (still in 1.9.0) buffers output until it sees the textual

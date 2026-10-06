@@ -56,7 +56,7 @@ what was approved.
 | **Gateway** | shape, size, encoding, UUID form, protocol-level confirm/cancel consistency | which choices are legitimate — it cannot know, for an arbitrary application |
 | **Interaction guard** | the responder owns the execution; the submitted id **and** value, together, are one *this* prompt actually offered as a pair; the response type matches the prompt type | anything about the resulting mutation |
 | **Agent** | mints a token binding action, resource, actor, request, the engine decision the prompt displayed, exact payload | whether that displayed decision is true — it is the model's report of the engine — and anything about current state, which has moved by the time it is applied |
-| **MCP server** | signature, every binding, lifetime ceiling, re-derived state under a row lock, transition policy, single use | — |
+| **MCP server** | signature, every binding, lifetime ceiling, re-derived state under a row lock, transition policy, single use | that a human actually made the choice: any token signed with `HITL_APPROVAL_SECRET` is accepted as one (see [the trust model](#the-trust-model)) |
 
 ### The gap the interaction guard closes
 
@@ -138,6 +138,35 @@ The minter caps its own TTL at 30 minutes, and the verifier enforces its own
 independent ceiling — the minter is not the trust boundary. Expiry is strict;
 the 60-second skew tolerance applies only to the lifetime ceiling, because
 leniency on expiry would extend the window an approval stays spendable.
+
+## The trust model
+
+The four layers defend against an untrusted **model** and an untrusted
+**browser**. They do not defend against a compromised **agent runtime**:
+
+* The NAT process is a trusted component. It holds `MCP_API_KEY` (to call the
+  MCP server) and `HITL_APPROVAL_SECRET` (to sign approval tokens). Neither ever
+  enters the model's context or a tool argument; that is what "the model cannot
+  mint a token" means. It does not mean the secrets are outside the agent
+  process.
+* HMAC-SHA256 is symmetric. The MCP server accepts any token signed with the
+  shared secret as a human decision. Code running in the agent container, or
+  anyone who reads its environment, could sign a token for a choice no human
+  made. The recomputation, hard constraints and single-use nonce would still
+  apply: the token's premise would have to equal the engine's real decision, and
+  each token could be spent once. A forged *override* with a fabricated rationale
+  would be indistinguishable from a human one in `audit_events`.
+* Prompt injection and runtime compromise are different threats. Prompt
+  injection changes what the model *says* and *requests*, and the boundary above
+  contains it (lesson [08](applied/08-adversarial-domain-data.md)). Runtime
+  compromise changes what trusted code *does*. That is contained only by
+  protecting the secret and the container: network segmentation, minimal images,
+  secret management, and keeping the signer small.
+
+Signing in a separate component after the human's authenticated response (the
+gateway, or a dedicated approval service), or using an asymmetric key whose
+private half only that component holds, would shrink what an agent-runtime
+compromise can do. This repository does not implement that.
 
 ## Transactional integrity
 

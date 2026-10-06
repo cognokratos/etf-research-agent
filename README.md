@@ -207,6 +207,8 @@ the browser path is unchanged; the evaluation harness asserts the synthetic
 `EVALUATION_PRINCIPAL` (default `evaluation-harness`). See
 [SECURITY.md](docs/SECURITY.md#the-agent-requires-an-asserted-identity).
 
-**Licensing.** Source files under `agent/src/` and `gateway/Cargo.toml` declare
-Apache-2.0. There is no root `LICENSE` file; see
+**Licensing.** Original code and documentation are MIT licensed
+([LICENSE](LICENSE)). Three agent files derived from NVIDIA NeMo Agent Toolkit
+keep Apache-2.0 and NVIDIA's notices; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and
 [LIMITATIONS.md](docs/LIMITATIONS.md#licensing).

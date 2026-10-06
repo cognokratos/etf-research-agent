@@ -226,12 +226,17 @@ This is a local demonstration. Add:
 
 ## Licensing
 
-The repository declares **Apache-2.0** in `gateway/Cargo.toml` and in the SPDX
-headers of the Python sources under `agent/src/`. There is no root `LICENSE`
-file.
+Original code and documentation are licensed under **MIT** (root
+[`LICENSE`](../LICENSE)). The package metadata (`gateway/Cargo.toml`,
+`mcp-server/Cargo.toml`, `ui/package.json`) and the SPDX headers of the original
+Python sources say the same. This replaces the earlier state described here, in
+which Apache-2.0 declarations and no root licence coexisted. The change was made
+deliberately and in one step, with the declarations updated together.
 
-An earlier revision of this branch added an **MIT** `LICENSE` at the root while
-leaving those Apache-2.0 declarations in place, which is a conflict rather than a
-choice. It is not carried here. Adding a root licence is the right thing to do —
-but it has to match the in-source declarations, or those have to change
-deliberately; not both at once, and not silently.
+Three files under `agent/src/nat_streaming_react/` are exceptions. `register.py`
+and `text_guardrails.py` are modified from NVIDIA NeMo Agent Toolkit code, and
+`observability/otlp_exporter.py` closely follows it. They keep their Apache-2.0
+declarations and NVIDIA's copyright notices, which is why `agent/pyproject.toml`
+declares `MIT AND Apache-2.0`. See
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) and
+[`LICENSES/Apache-2.0.txt`](../LICENSES/Apache-2.0.txt).
