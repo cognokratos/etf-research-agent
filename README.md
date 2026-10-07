@@ -4,6 +4,21 @@ A deterministic ETF evaluation engine behind a guarded LLM agent, where every
 state change requires a signed human approval and lands in an append-only
 history.
 
+## Where this fits in CognoKratos
+
+This repository is **Part III — Governed Decision Engineering** in the current
+[CognoKratos curriculum](https://github.com/cognokratos/.github/blob/main/CURRICULUM.md).
+It asks what happens once an agent is allowed to reason about consequential
+decisions: which parts may remain probabilistic, which must be deterministic,
+what evidence must survive, and who ultimately owns authority over the outcome.
+
+> **Core lesson:** The model can reason about a decision without owning the decision.
+
+The repository is a laboratory, not a claim that there is one universal policy
+architecture. Read the [CognoKratos foundation](https://github.com/cognokratos/.github/blob/main/FOUNDATION.md),
+follow the structured synthesis in the [CognoKratos Book](https://book.cognokratos.com/part-3/introduction.html),
+or help [challenge and extend the curriculum](https://github.com/cognokratos/.github/blob/main/CONTRIBUTING.md).
+
 ```text
 Browser / assistant-ui
     ↓ Keycloak login; opaque HttpOnly BFF session; CSRF
@@ -51,9 +66,9 @@ how to port a fix from it.
 
 ## Learn
 
-The two repositories form one curriculum: the template teaches how to engineer a
-production AI agent; this one teaches how to engineer a governed decision system
-around it.
+The current CognoKratos curriculum uses this repository after the production-agent
+foundation and durable-runtime track to study **governance around consequential
+reasoning**.
 
 | If you are… | Start with |
 | --- | --- |
@@ -143,6 +158,15 @@ nothing was applied.
 | [DEMO.md](docs/DEMO.md) | A full walkthrough: prompts to type, and what should happen |
 | [ACCEPTANCE.md](docs/ACCEPTANCE.md) | What was claimed, and what establishes it |
 | [EVALUATION_ANALYSIS.md](docs/EVALUATION_ANALYSIS.md) | The measured figures, and how to read them |
+
+## Contribute to the curriculum
+
+This track should evolve through evidence. Useful contributions include stronger
+policy models, adversarial cases, better evidence contracts, alternative
+approval designs, reproduced failure modes, or new labs that show where the
+current governance assumptions stop holding.
+
+See the CognoKratos [contribution model](https://github.com/cognokratos/.github/blob/main/CONTRIBUTING.md).
 
 ## Verify it
 
