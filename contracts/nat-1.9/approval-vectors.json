@@ -1,0 +1,174 @@
+{
+  "_comment": "Tokens minted by the real Python minter (approval.build_claims + mint_token) with a fixed `now` and nonce. The Rust verifier must accept each signature and reproduce canonical_claims, canonical_payload and payload_sha256 byte for byte. exp is in the past by design: these are encoding vectors, not spendable approvals.",
+  "secret": "a-test-secret-of-at-least-24-characters",
+  "now": 1794700000,
+  "vectors": [
+    {
+      "name": "commit-human-promotion-non-ascii",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "commit",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": "shortlist",
+        "expected_choice": "research",
+        "override_requested": true,
+        "rationale": "Accepting the tracking-difference gap deliberately — Zoë ✓",
+        "payload": {
+          "llm_recommendation": "research",
+          "research_note": "Reviewed with Zoë ✓ — broad developed-market exposure at 0.12% TER."
+        },
+        "payload_sha256": "3e9ddf439514baa41ba58e1d2f91aba18148f2eb7219e7ec7ab0f532a0fcd0d1",
+        "nonce": "00000000-0000-4000-8000-000000000001"
+      },
+      "canonical_claims": "{\"action\":\"commit\",\"actor_id\":\"researcher-1\",\"choice\":\"shortlist\",\"exp\":1794700600,\"expected_choice\":\"research\",\"nonce\":\"00000000-0000-4000-8000-000000000001\",\"override_requested\":true,\"payload\":{\"llm_recommendation\":\"research\",\"research_note\":\"Reviewed with Zoë ✓ — broad developed-market exposure at 0.12% TER.\"},\"payload_sha256\":\"3e9ddf439514baa41ba58e1d2f91aba18148f2eb7219e7ec7ab0f532a0fcd0d1\",\"rationale\":\"Accepting the tracking-difference gap deliberately — Zoë ✓\",\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{\"llm_recommendation\":\"research\",\"research_note\":\"Reviewed with Zoë ✓ — broad developed-market exposure at 0.12% TER.\"}",
+      "payload_sha256": "3e9ddf439514baa41ba58e1d2f91aba18148f2eb7219e7ec7ab0f532a0fcd0d1",
+      "token": "eyJhY3Rpb24iOiJjb21taXQiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InNob3J0bGlzdCIsImV4cCI6MTc5NDcwMDYwMCwiZXhwZWN0ZWRfY2hvaWNlIjoicmVzZWFyY2giLCJub25jZSI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSIsIm92ZXJyaWRlX3JlcXVlc3RlZCI6dHJ1ZSwicGF5bG9hZCI6eyJsbG1fcmVjb21tZW5kYXRpb24iOiJyZXNlYXJjaCIsInJlc2VhcmNoX25vdGUiOiJSZXZpZXdlZCB3aXRoIFpvw6sg4pyTIOKAlCBicm9hZCBkZXZlbG9wZWQtbWFya2V0IGV4cG9zdXJlIGF0IDAuMTIlIFRFUi4ifSwicGF5bG9hZF9zaGEyNTYiOiIzZTlkZGY0Mzk1MTRiYWE0MWJhNThlMWQyZjkxYWJhMTgxNDhmMmViNzIxOWU3ZWM3YWIwZjUzMmEwZmNkMGQxIiwicmF0aW9uYWxlIjoiQWNjZXB0aW5nIHRoZSB0cmFja2luZy1kaWZmZXJlbmNlIGdhcCBkZWxpYmVyYXRlbHkg4oCUIFpvw6sg4pyTIiwicmVxdWVzdF9pZCI6IjExMTExMTExLTExMTEtNDExMS04MTExLTExMTExMTExMTExMSIsInJlc291cmNlX2lkIjoiVldDRS1YRVRSQSIsInYiOjF9.KV-dQy5Qf5uaDCgkx0aKsqm3Fsbip5VvokVelilGsUU"
+    },
+    {
+      "name": "commit-confirm-engine-decision",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "commit",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": "research",
+        "expected_choice": "research",
+        "override_requested": false,
+        "rationale": null,
+        "payload": {
+          "llm_recommendation": "reject"
+        },
+        "payload_sha256": "a9ad6677bdb7495338557002881fe3f560b3cd8388df8832710832e85d427288",
+        "nonce": "00000000-0000-4000-8000-000000000002"
+      },
+      "canonical_claims": "{\"action\":\"commit\",\"actor_id\":\"researcher-1\",\"choice\":\"research\",\"exp\":1794700600,\"expected_choice\":\"research\",\"nonce\":\"00000000-0000-4000-8000-000000000002\",\"override_requested\":false,\"payload\":{\"llm_recommendation\":\"reject\"},\"payload_sha256\":\"a9ad6677bdb7495338557002881fe3f560b3cd8388df8832710832e85d427288\",\"rationale\":null,\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{\"llm_recommendation\":\"reject\"}",
+      "payload_sha256": "a9ad6677bdb7495338557002881fe3f560b3cd8388df8832710832e85d427288",
+      "token": "eyJhY3Rpb24iOiJjb21taXQiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InJlc2VhcmNoIiwiZXhwIjoxNzk0NzAwNjAwLCJleHBlY3RlZF9jaG9pY2UiOiJyZXNlYXJjaCIsIm5vbmNlIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwib3ZlcnJpZGVfcmVxdWVzdGVkIjpmYWxzZSwicGF5bG9hZCI6eyJsbG1fcmVjb21tZW5kYXRpb24iOiJyZWplY3QifSwicGF5bG9hZF9zaGEyNTYiOiJhOWFkNjY3N2JkYjc0OTUzMzg1NTcwMDI4ODFmZTNmNTYwYjNjZDgzODhkZjg4MzI3MTA4MzJlODVkNDI3Mjg4IiwicmF0aW9uYWxlIjpudWxsLCJyZXF1ZXN0X2lkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwicmVzb3VyY2VfaWQiOiJWV0NFLVhFVFJBIiwidiI6MX0.d-e3_ptyCQyqmBwXKbs7AshJMSEab-4IBxjqavIKE6o"
+    },
+    {
+      "name": "commit-human-demotion",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "commit",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": "reject",
+        "expected_choice": "shortlist",
+        "override_requested": true,
+        "rationale": "Concentration too high for me.",
+        "payload": {},
+        "payload_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "nonce": "00000000-0000-4000-8000-000000000003"
+      },
+      "canonical_claims": "{\"action\":\"commit\",\"actor_id\":\"researcher-1\",\"choice\":\"reject\",\"exp\":1794700600,\"expected_choice\":\"shortlist\",\"nonce\":\"00000000-0000-4000-8000-000000000003\",\"override_requested\":true,\"payload\":{},\"payload_sha256\":\"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\",\"rationale\":\"Concentration too high for me.\",\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{}",
+      "payload_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "token": "eyJhY3Rpb24iOiJjb21taXQiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InJlamVjdCIsImV4cCI6MTc5NDcwMDYwMCwiZXhwZWN0ZWRfY2hvaWNlIjoic2hvcnRsaXN0Iiwibm9uY2UiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiLCJvdmVycmlkZV9yZXF1ZXN0ZWQiOnRydWUsInBheWxvYWQiOnt9LCJwYXlsb2FkX3NoYTI1NiI6IjQ0MTM2ZmEzNTViMzY3OGExMTQ2YWQxNmY3ZTg2NDllOTRmYjRmYzIxZmU3N2U4MzEwYzA2MGY2MWNhYWZmOGEiLCJyYXRpb25hbGUiOiJDb25jZW50cmF0aW9uIHRvbyBoaWdoIGZvciBtZS4iLCJyZXF1ZXN0X2lkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwicmVzb3VyY2VfaWQiOiJWV0NFLVhFVFJBIiwidiI6MX0.WIU-rzcyObbJdKKZV1Hn86E4E0yLr_UV8mQ2OLvF9zQ"
+    },
+    {
+      "name": "shortlist-promotion",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "shortlist",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": "shortlist",
+        "expected_choice": "research",
+        "override_requested": true,
+        "rationale": "Human promotion.",
+        "payload": {
+          "research_note": "Grounded note."
+        },
+        "payload_sha256": "c2cf1f6ded892be456cb5f6638dd98be8d5625fafead4981b8abb950b3f2bea3",
+        "nonce": "00000000-0000-4000-8000-000000000004"
+      },
+      "canonical_claims": "{\"action\":\"shortlist\",\"actor_id\":\"researcher-1\",\"choice\":\"shortlist\",\"exp\":1794700600,\"expected_choice\":\"research\",\"nonce\":\"00000000-0000-4000-8000-000000000004\",\"override_requested\":true,\"payload\":{\"research_note\":\"Grounded note.\"},\"payload_sha256\":\"c2cf1f6ded892be456cb5f6638dd98be8d5625fafead4981b8abb950b3f2bea3\",\"rationale\":\"Human promotion.\",\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{\"research_note\":\"Grounded note.\"}",
+      "payload_sha256": "c2cf1f6ded892be456cb5f6638dd98be8d5625fafead4981b8abb950b3f2bea3",
+      "token": "eyJhY3Rpb24iOiJzaG9ydGxpc3QiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InNob3J0bGlzdCIsImV4cCI6MTc5NDcwMDYwMCwiZXhwZWN0ZWRfY2hvaWNlIjoicmVzZWFyY2giLCJub25jZSI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwNCIsIm92ZXJyaWRlX3JlcXVlc3RlZCI6dHJ1ZSwicGF5bG9hZCI6eyJyZXNlYXJjaF9ub3RlIjoiR3JvdW5kZWQgbm90ZS4ifSwicGF5bG9hZF9zaGEyNTYiOiJjMmNmMWY2ZGVkODkyYmU0NTZjYjVmNjYzOGRkOThiZThkNTYyNWZhZmVhZDQ5ODFiOGFiYjk1MGIzZjJiZWEzIiwicmF0aW9uYWxlIjoiSHVtYW4gcHJvbW90aW9uLiIsInJlcXVlc3RfaWQiOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJyZXNvdXJjZV9pZCI6IlZXQ0UtWEVUUkEiLCJ2IjoxfQ.6waudSgQoJiqrudBbJn7-WBKe_B8eEggf-vKcLjCzA0"
+    },
+    {
+      "name": "shortlist-confirm",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "shortlist",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": "shortlist",
+        "expected_choice": "shortlist",
+        "override_requested": false,
+        "rationale": null,
+        "payload": {
+          "research_note": "Grounded note."
+        },
+        "payload_sha256": "c2cf1f6ded892be456cb5f6638dd98be8d5625fafead4981b8abb950b3f2bea3",
+        "nonce": "00000000-0000-4000-8000-000000000005"
+      },
+      "canonical_claims": "{\"action\":\"shortlist\",\"actor_id\":\"researcher-1\",\"choice\":\"shortlist\",\"exp\":1794700600,\"expected_choice\":\"shortlist\",\"nonce\":\"00000000-0000-4000-8000-000000000005\",\"override_requested\":false,\"payload\":{\"research_note\":\"Grounded note.\"},\"payload_sha256\":\"c2cf1f6ded892be456cb5f6638dd98be8d5625fafead4981b8abb950b3f2bea3\",\"rationale\":null,\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{\"research_note\":\"Grounded note.\"}",
+      "payload_sha256": "c2cf1f6ded892be456cb5f6638dd98be8d5625fafead4981b8abb950b3f2bea3",
+      "token": "eyJhY3Rpb24iOiJzaG9ydGxpc3QiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InNob3J0bGlzdCIsImV4cCI6MTc5NDcwMDYwMCwiZXhwZWN0ZWRfY2hvaWNlIjoic2hvcnRsaXN0Iiwibm9uY2UiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDUiLCJvdmVycmlkZV9yZXF1ZXN0ZWQiOmZhbHNlLCJwYXlsb2FkIjp7InJlc2VhcmNoX25vdGUiOiJHcm91bmRlZCBub3RlLiJ9LCJwYXlsb2FkX3NoYTI1NiI6ImMyY2YxZjZkZWQ4OTJiZTQ1NmNiNWY2NjM4ZGQ5OGJlOGQ1NjI1ZmFmZWFkNDk4MWI4YWJiOTUwYjNmMmJlYTMiLCJyYXRpb25hbGUiOm51bGwsInJlcXVlc3RfaWQiOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJyZXNvdXJjZV9pZCI6IlZXQ0UtWEVUUkEiLCJ2IjoxfQ.y0IQNOuECBEgvgkRosGAFJjWMI51tHwM-DYplQoFe3E"
+    },
+    {
+      "name": "assign",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "assign",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": null,
+        "expected_choice": null,
+        "override_requested": false,
+        "rationale": null,
+        "payload": {
+          "assignee": "researcher-7"
+        },
+        "payload_sha256": "c6faf8da91222ea8ec6860bfdba85caf32fd57f1644c2fc78443fbade413dfe3",
+        "nonce": "00000000-0000-4000-8000-000000000006"
+      },
+      "canonical_claims": "{\"action\":\"assign\",\"actor_id\":\"researcher-1\",\"choice\":null,\"exp\":1794700600,\"expected_choice\":null,\"nonce\":\"00000000-0000-4000-8000-000000000006\",\"override_requested\":false,\"payload\":{\"assignee\":\"researcher-7\"},\"payload_sha256\":\"c6faf8da91222ea8ec6860bfdba85caf32fd57f1644c2fc78443fbade413dfe3\",\"rationale\":null,\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{\"assignee\":\"researcher-7\"}",
+      "payload_sha256": "c6faf8da91222ea8ec6860bfdba85caf32fd57f1644c2fc78443fbade413dfe3",
+      "token": "eyJhY3Rpb24iOiJhc3NpZ24iLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6bnVsbCwiZXhwIjoxNzk0NzAwNjAwLCJleHBlY3RlZF9jaG9pY2UiOm51bGwsIm5vbmNlIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA2Iiwib3ZlcnJpZGVfcmVxdWVzdGVkIjpmYWxzZSwicGF5bG9hZCI6eyJhc3NpZ25lZSI6InJlc2VhcmNoZXItNyJ9LCJwYXlsb2FkX3NoYTI1NiI6ImM2ZmFmOGRhOTEyMjJlYThlYzY4NjBiZmRiYTg1Y2FmMzJmZDU3ZjE2NDRjMmZjNzg0NDNmYmFkZTQxM2RmZTMiLCJyYXRpb25hbGUiOm51bGwsInJlcXVlc3RfaWQiOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJyZXNvdXJjZV9pZCI6IlZXQ0UtWEVUUkEiLCJ2IjoxfQ.Ck_EFwxQb49evluwxc6_c3tIlLUmBX9gemVw4JE2Ggc"
+    },
+    {
+      "name": "escaping-and-control-characters",
+      "claims": {
+        "v": 1,
+        "exp": 1794700600,
+        "action": "commit",
+        "resource_id": "VWCE-XETRA",
+        "actor_id": "researcher-1",
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "choice": "research",
+        "expected_choice": "research",
+        "override_requested": false,
+        "rationale": null,
+        "payload": {
+          "research_note": "quote \" backslash \\ tab \t newline \n unit \u001f slash / emoji 😀 U+2028   end"
+        },
+        "payload_sha256": "aca1f613476193c5e558b6f828c6ab74173842fb433855f7000b6f0ce211c6e4",
+        "nonce": "00000000-0000-4000-8000-000000000007"
+      },
+      "canonical_claims": "{\"action\":\"commit\",\"actor_id\":\"researcher-1\",\"choice\":\"research\",\"exp\":1794700600,\"expected_choice\":\"research\",\"nonce\":\"00000000-0000-4000-8000-000000000007\",\"override_requested\":false,\"payload\":{\"research_note\":\"quote \\\" backslash \\\\ tab \\t newline \\n unit \\u001f slash / emoji 😀 U+2028   end\"},\"payload_sha256\":\"aca1f613476193c5e558b6f828c6ab74173842fb433855f7000b6f0ce211c6e4\",\"rationale\":null,\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"resource_id\":\"VWCE-XETRA\",\"v\":1}",
+      "canonical_payload": "{\"research_note\":\"quote \\\" backslash \\\\ tab \\t newline \\n unit \\u001f slash / emoji 😀 U+2028   end\"}",
+      "payload_sha256": "aca1f613476193c5e558b6f828c6ab74173842fb433855f7000b6f0ce211c6e4",
+      "token": "eyJhY3Rpb24iOiJjb21taXQiLCJhY3Rvcl9pZCI6InJlc2VhcmNoZXItMSIsImNob2ljZSI6InJlc2VhcmNoIiwiZXhwIjoxNzk0NzAwNjAwLCJleHBlY3RlZF9jaG9pY2UiOiJyZXNlYXJjaCIsIm5vbmNlIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA3Iiwib3ZlcnJpZGVfcmVxdWVzdGVkIjpmYWxzZSwicGF5bG9hZCI6eyJyZXNlYXJjaF9ub3RlIjoicXVvdGUgXCIgYmFja3NsYXNoIFxcIHRhYiBcdCBuZXdsaW5lIFxuIHVuaXQgXHUwMDFmIHNsYXNoIC8gZW1vamkg8J-YgCBVKzIwMjgg4oCoIGVuZCJ9LCJwYXlsb2FkX3NoYTI1NiI6ImFjYTFmNjEzNDc2MTkzYzVlNTU4YjZmODI4YzZhYjc0MTczODQyZmI0MzM4NTVmNzAwMGI2ZjBjZTIxMWM2ZTQiLCJyYXRpb25hbGUiOm51bGwsInJlcXVlc3RfaWQiOiIxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJyZXNvdXJjZV9pZCI6IlZXQ0UtWEVUUkEiLCJ2IjoxfQ.PFZQacZNj2y-72VOTEPS-bvZuMua2hjUHQXhGmJjZEg"
+    }
+  ]
+}

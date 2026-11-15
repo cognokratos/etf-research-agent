@@ -1,0 +1,308 @@
+{
+  "_comment": "Approval prompt presentation as produced by agent/src/nat_streaming_react/approval.py at the pinned revision. The recorded sse/ corpus shows the same prompts on the wire.",
+  "decision_options": {
+    "rules=reject,note_available=False": [
+      {
+        "id": "reject",
+        "label": "Confirm — reject",
+        "value": "reject",
+        "description": "The deterministic engine's decision. Applied with no override."
+      },
+      {
+        "id": "research",
+        "label": "Override — research",
+        "value": "research",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "shortlist",
+        "label": "Override — shortlist",
+        "value": "shortlist",
+        "description": "Requires a rationale, and a grounded research note — no note has been drafted yet, so you will be asked for one."
+      },
+      {
+        "id": "cancel",
+        "label": "Cancel",
+        "value": "__CANCEL__",
+        "description": "Change nothing."
+      }
+    ],
+    "rules=reject,note_available=True": [
+      {
+        "id": "reject",
+        "label": "Confirm — reject",
+        "value": "reject",
+        "description": "The deterministic engine's decision. Applied with no override."
+      },
+      {
+        "id": "research",
+        "label": "Override — research",
+        "value": "research",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "shortlist",
+        "label": "Override — shortlist",
+        "value": "shortlist",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "cancel",
+        "label": "Cancel",
+        "value": "__CANCEL__",
+        "description": "Change nothing."
+      }
+    ],
+    "rules=research,note_available=False": [
+      {
+        "id": "reject",
+        "label": "Override — reject",
+        "value": "reject",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "research",
+        "label": "Confirm — research",
+        "value": "research",
+        "description": "The deterministic engine's decision. Applied with no override."
+      },
+      {
+        "id": "shortlist",
+        "label": "Override — shortlist",
+        "value": "shortlist",
+        "description": "Requires a rationale, and a grounded research note — no note has been drafted yet, so you will be asked for one."
+      },
+      {
+        "id": "cancel",
+        "label": "Cancel",
+        "value": "__CANCEL__",
+        "description": "Change nothing."
+      }
+    ],
+    "rules=research,note_available=True": [
+      {
+        "id": "reject",
+        "label": "Override — reject",
+        "value": "reject",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "research",
+        "label": "Confirm — research",
+        "value": "research",
+        "description": "The deterministic engine's decision. Applied with no override."
+      },
+      {
+        "id": "shortlist",
+        "label": "Override — shortlist",
+        "value": "shortlist",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "cancel",
+        "label": "Cancel",
+        "value": "__CANCEL__",
+        "description": "Change nothing."
+      }
+    ],
+    "rules=shortlist,note_available=False": [
+      {
+        "id": "reject",
+        "label": "Override — reject",
+        "value": "reject",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "research",
+        "label": "Override — research",
+        "value": "research",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "shortlist",
+        "label": "Confirm — shortlist",
+        "value": "shortlist",
+        "description": "The deterministic engine's decision. Applied with no override."
+      },
+      {
+        "id": "cancel",
+        "label": "Cancel",
+        "value": "__CANCEL__",
+        "description": "Change nothing."
+      }
+    ],
+    "rules=shortlist,note_available=True": [
+      {
+        "id": "reject",
+        "label": "Override — reject",
+        "value": "reject",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "research",
+        "label": "Override — research",
+        "value": "research",
+        "description": "Requires a rationale, recorded against your identity."
+      },
+      {
+        "id": "shortlist",
+        "label": "Confirm — shortlist",
+        "value": "shortlist",
+        "description": "The deterministic engine's decision. Applied with no override."
+      },
+      {
+        "id": "cancel",
+        "label": "Cancel",
+        "value": "__CANCEL__",
+        "description": "Change nothing."
+      }
+    ]
+  },
+  "required_prompts": [
+    {
+      "chosen": "reject",
+      "rules_decision": "reject",
+      "note_available": false,
+      "needs_rationale": false,
+      "needs_note": false
+    },
+    {
+      "chosen": "reject",
+      "rules_decision": "reject",
+      "note_available": true,
+      "needs_rationale": false,
+      "needs_note": false
+    },
+    {
+      "chosen": "reject",
+      "rules_decision": "research",
+      "note_available": false,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "reject",
+      "rules_decision": "research",
+      "note_available": true,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "reject",
+      "rules_decision": "shortlist",
+      "note_available": false,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "reject",
+      "rules_decision": "shortlist",
+      "note_available": true,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "research",
+      "rules_decision": "reject",
+      "note_available": false,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "research",
+      "rules_decision": "reject",
+      "note_available": true,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "research",
+      "rules_decision": "research",
+      "note_available": false,
+      "needs_rationale": false,
+      "needs_note": false
+    },
+    {
+      "chosen": "research",
+      "rules_decision": "research",
+      "note_available": true,
+      "needs_rationale": false,
+      "needs_note": false
+    },
+    {
+      "chosen": "research",
+      "rules_decision": "shortlist",
+      "note_available": false,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "research",
+      "rules_decision": "shortlist",
+      "note_available": true,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "shortlist",
+      "rules_decision": "reject",
+      "note_available": false,
+      "needs_rationale": true,
+      "needs_note": true
+    },
+    {
+      "chosen": "shortlist",
+      "rules_decision": "reject",
+      "note_available": true,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "shortlist",
+      "rules_decision": "research",
+      "note_available": false,
+      "needs_rationale": true,
+      "needs_note": true
+    },
+    {
+      "chosen": "shortlist",
+      "rules_decision": "research",
+      "note_available": true,
+      "needs_rationale": true,
+      "needs_note": false
+    },
+    {
+      "chosen": "shortlist",
+      "rules_decision": "shortlist",
+      "note_available": false,
+      "needs_rationale": false,
+      "needs_note": true
+    },
+    {
+      "chosen": "shortlist",
+      "rules_decision": "shortlist",
+      "note_available": true,
+      "needs_rationale": false,
+      "needs_note": false
+    }
+  ],
+  "prompt_text_choosing": "ETF: VWCE-XETRA\nAction: commit review decision\nSummary: S\nConfirm the deterministic decision, or choose a different one. Any change is an explicit human override and requires a rationale.\nThis records a research decision only. Nothing is bought, sold or held.",
+  "prompt_text_confirming": "ETF: VWCE-XETRA\nAction: assign a research owner\nSummary: S\nConfirm this state-changing action before it is applied.\nThis records a research decision only. Nothing is bought, sold or held.",
+  "binary_options": [
+    {
+      "id": "confirm",
+      "label": "Confirm",
+      "value": true
+    },
+    {
+      "id": "cancel",
+      "label": "Cancel",
+      "value": false
+    }
+  ],
+  "token_ttl_seconds": {
+    "configured": 600,
+    "minimum": 60,
+    "maximum": 1800
+  }
+}

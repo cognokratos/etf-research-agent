@@ -1,0 +1,19 @@
+{
+  "scenario": "tool-error-unknown-etf",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "WORKFLOW_START,WORKFLOW_END,TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Show me the fund NOPE-XXXX"
+        }
+      ]
+    },
+    "identity": "evaluation-harness",
+    "sent_x_request_id": false
+  }
+}

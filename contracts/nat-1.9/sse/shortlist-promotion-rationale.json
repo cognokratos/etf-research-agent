@@ -1,0 +1,50 @@
+{
+  "scenario": "shortlist-promotion-rationale",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Shortlist VFEM-LSE"
+        }
+      ]
+    },
+    "identity": "researcher-1",
+    "sent_x_request_id": true
+  },
+  "interactions": [
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "049f2a6d-724c-4ebc-89e2-a6f6d05af2d1",
+        "interaction_id": "867e28a3-5961-46e1-8c2c-486a7b81e9e3",
+        "prompt": {
+          "text": "ETF: VFEM-LSE\nAction: shortlist\nDeterministic engine (authoritative): research\nRequested decision: shortlist\nModel-drafted research note (not verified by a human; will be signed and recorded verbatim if you approve): Emerging-market exposure; see get_research_context.\nSummary: Recorded for the NAT freeze corpus.\nThe deterministic engine decided 'research'. You are overriding it to 'shortlist'. This is recorded in the append-only history against your identity and requires a rationale.\nThis records a research decision only. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "input_type": "text",
+          "placeholder": "Explain why the deterministic decision should be overridden",
+          "required": true
+        },
+        "response_url": "/executions/049f2a6d-724c-4ebc-89e2-a6f6d05af2d1/interactions/867e28a3-5961-46e1-8c2c-486a7b81e9e3/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "text",
+              "text": "Promotion rationale typed by the human."
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    }
+  ]
+}

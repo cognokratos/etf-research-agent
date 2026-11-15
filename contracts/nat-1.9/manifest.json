@@ -1,0 +1,443 @@
+{
+  "_comment": "What the NAT 1.9 -> Rust/Rig migration must preserve, and how strictly. Checked by scripts/verify_nat_freeze.py (digests, prompts, domain, suites); the behavioural records are asserted by the tests named in docs/NAT-FREEZE.md. Prose lives in that document; this file is the machine-checkable half.",
+  "pinned_revisions": {
+    "etf_research_agent_main": "87daaa3139849a77fe83cb3905d3aee8c53b14e7",
+    "simple_agent_template_main": "a02b5367273a246a3052cf01db5e49a40101163e",
+    "simple_agent_template_nat_tag": {
+      "name": "nat-1.9-final",
+      "tag_object": "cb8900e33ac1c9688d19446435161ab09ec0b1b3",
+      "commit": "aa808c10d80e30623e609d25f5aa5bedb2ccebd4",
+      "note": "the TEMPLATE's tag; not an ancestor of ETF history"
+    },
+    "runtime_versions_recorded": {
+      "nvidia-nat": "1.9.0",
+      "nvidia-nat-mcp": "1.9.0",
+      "nemoguardrails": "0.21.0",
+      "rmcp (mcp-server)": "2.2.0",
+      "python (recording venv)": "3.12",
+      "rustc (recording)": "1.97.1"
+    },
+    "recorded_on": "2026-11-15"
+  },
+  "historical_evaluation_provenance": {
+    "agent_build_commit": "34104f2e55ebff35932b469d7b13887d07667e45",
+    "reachable_at": "refs/pull/1/head on cognokratos/etf-research-agent (squash-merged into 5934dfb); not an ancestor of main",
+    "runtime_difference_to_pinned_main": "docstrings, SPDX/licence comments and one #[cfg(test)] module only (git diff 34104f2 87daaa3 -- agent/src agent/config.yml mcp-server/src data evaluation)",
+    "model": "qwen3:8b",
+    "guard_model": "qwen3:8b",
+    "config_sha256": "3c34e023632ae8a7b031c4c1ae00d2c84b312255c768cadb2358dcec4fc14e60",
+    "prompt_sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
+    "guardrails_prompts_sha256": "957a8d87fea2b2413feae4a2b429f22bb052b13b3bd3b57a4bf1569a8763ccbb",
+    "guardrails_prompts_digest_method": "sha256 of yaml.safe_dump(prompts, sort_keys=True, default_flow_style=False); NOT canonical JSON",
+    "status": "historical NAT baseline; says nothing about any other runtime"
+  },
+  "byte_for_byte": [
+    {
+      "path": "data/etfs.json",
+      "sha256": "99740e77745fc3a7ed894a0d98d5d459eebdf4b754d207c44e5f7ada02ec29f8",
+      "why": "the ETF snapshot: 31 listings, hand-transcribed figures, typed provenance. Source data is out of scope for the migration."
+    },
+    {
+      "path": "data/investor_profile.json",
+      "sha256": "d783daffe2a4d3ceb6f591354be2f04ed154a999c7656f662b6f3e92229d914c",
+      "why": "the investor profile the engine scores against"
+    },
+    {
+      "path": "data/rules_spec.json",
+      "sha256": "9db2e0f3dd6cb53630cb49e024076645f5e7c73f612ea8df0ec18f9dcfe1e72f",
+      "why": "the policy program: components, bands, caps, hard constraints"
+    },
+    {
+      "path": "data/test_cases.json",
+      "sha256": "cbb4415a9caaa5bf7d9ab3d8cafe18be1f0e82999200f010494392327108cbdc",
+      "why": "the 20 labelled decision cases"
+    },
+    {
+      "path": "evaluation/results/deterministic-etf-baseline.json",
+      "sha256": "02b4afb6859b2ca45b8c6cff81463fbb1d219008729f8344f476d1d117a416a7",
+      "why": "the engine's output for every listing and case; make rules-test regenerates it and CI fails on any diff"
+    },
+    {
+      "path": "evaluation/datasets/evaluation_accuracy.json",
+      "sha256": "52b1eac47a8e1de636c614a8346417628f3e7b0315b2ad4ae58b3c560dbdb1e2",
+      "why": "live suite dataset: evaluation"
+    },
+    {
+      "path": "evaluation/datasets/decision_policy.json",
+      "sha256": "924550a7865546919e729c42d1e1d32a42015cb4b4b21bab2be66d1e9c1c3e69",
+      "why": "live suite dataset: policy"
+    },
+    {
+      "path": "evaluation/datasets/research_grounding.json",
+      "sha256": "23ea0466f2147d5be1dc4078d9ace6930ecad0dd4c6244468a80d3a438c146dc",
+      "why": "live suite dataset: grounding"
+    },
+    {
+      "path": "evaluation/datasets/injection.json",
+      "sha256": "2226f0a6230b61923b1a74e60739c74c624f3665783fed84eb6f9e34c111977f",
+      "why": "live suite dataset: injection"
+    },
+    {
+      "path": "evaluation/datasets/guardrails.json",
+      "sha256": "2e7ef5ebd2bcd9958f4b909cf33eb88f2e74cdc869543df837845163d5a26d29",
+      "why": "live suite dataset: guardrails"
+    },
+    {
+      "path": "evaluation/results/evaluation-latest.json",
+      "sha256": "40dd8aac5b8c8532dfc2d699f9464aeed071457f2f911df4f8b685c8a57a02e3",
+      "why": "historical NAT result; must not be overwritten by a Rust run without renaming"
+    },
+    {
+      "path": "evaluation/results/policy-latest.json",
+      "sha256": "3eb22a473106acfd1976c8b4e2071fb145e4c6a6f9da53a7315166c84a4403f3",
+      "why": "historical NAT result"
+    },
+    {
+      "path": "evaluation/results/grounding-latest.json",
+      "sha256": "91bb1daa269a498e2f62d5d9603017e365d82618caa22e31d775d2889d56cd12",
+      "why": "historical NAT result"
+    },
+    {
+      "path": "evaluation/results/injection-latest.json",
+      "sha256": "5fa41c388b482791c5d606f7d9c6115604099a33ae1ce5c30f2d3fb84ea8a7fa",
+      "why": "historical NAT result"
+    },
+    {
+      "path": "evaluation/results/guardrails-latest.json",
+      "sha256": "ba77a501bdf63a3c43c59d308d6262adb532b3d1ea62a3a303935775ae09caf9",
+      "why": "historical NAT result"
+    },
+    {
+      "path": "db/init.sql",
+      "sha256": "ee964452fdb67dd929a4348f5823022e6a8b4077d670d2790614840de495ed01",
+      "why": "schema, append-only audit trigger and nonce table the MCP server relies on"
+    }
+  ],
+  "prompts": {
+    "system_prompt": {
+      "sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
+      "frozen_copy": "contracts/nat-1.9/prompts/system_prompt.txt",
+      "equals": "/version prompt_sha256",
+      "note": "contains NAT ReAct template placeholders {tools} and {tool_names}; how a new runtime fills them is semantic, the surrounding text is byte-for-byte"
+    },
+    "self_check_input": {
+      "sha256": "6935d37dd47f1294faf1e3a0ecdefdab2fb8b033050b90393f2f64d11bd847be",
+      "frozen_copy": "contracts/nat-1.9/prompts/self_check_input.txt",
+      "note": "contains the NeMo placeholder {{ user_input }}; parsed with is_content_safe, max_tokens 4"
+    }
+  },
+  "domain_invariants": {
+    "listings": 31,
+    "funds_by_isin": 30,
+    "labelled_cases": 20,
+    "baseline_decision_distribution": {
+      "reject": 6,
+      "research": 12,
+      "shortlist": 13
+    },
+    "baseline_accuracy": 1.0,
+    "baseline_test_cases_passed": 20,
+    "rules_version": "1.1.0",
+    "investor_profile_version": "1.0.0",
+    "baseline_fixture_sha256": {
+      "etfs.json": "99740e77745fc3a7ed894a0d98d5d459eebdf4b754d207c44e5f7ada02ec29f8",
+      "investor_profile.json": "d783daffe2a4d3ceb6f591354be2f04ed154a999c7656f662b6f3e92229d914c",
+      "rules_spec.json": "9db2e0f3dd6cb53630cb49e024076645f5e7c73f612ea8df0ec18f9dcfe1e72f",
+      "test_cases.json": "cbb4415a9caaa5bf7d9ab3d8cafe18be1f0e82999200f010494392327108cbdc"
+    },
+    "decisions": [
+      "reject",
+      "research",
+      "shortlist"
+    ],
+    "_spot_checks": {
+      "VWCE-XETRA": "shortlist",
+      "CW8-EPA": "research",
+      "XAIX-XETRA": "research",
+      "VTI-ARCA": "reject",
+      "AGGH-XETRA": "research",
+      "XNIF-XETRA": "reject"
+    }
+  },
+  "evaluation": {
+    "fail_threshold": 1.0,
+    "gate_rule": "each suite passes iff its gated metric >= fail_threshold; every other metric is recorded, not gated",
+    "suites": {
+      "evaluation": {
+        "gated_metric": "evaluation_correct/mean",
+        "cases": 12,
+        "historical_nat_result": {
+          "file": "evaluation/results/evaluation-latest.json",
+          "gated_value": 1.0,
+          "passed": true,
+          "generated_at": "2026-10-04T19:59:08.792590+00:00",
+          "mlflow_run_id": "e1cc0aac312b411582d946de8642d279",
+          "ungated_metrics": {
+            "evaluation_decision_match_tool/mean": 1.0,
+            "evaluation_decision_match_stated/mean": 1.0,
+            "evaluation_stated_decision_present/mean": 1.0,
+            "evaluation_no_contradiction/mean": 1.0,
+            "evaluation_no_forecast_claim/mean": 1.0,
+            "evaluation_no_execution_claim/mean": 1.0,
+            "evaluation_no_misattributed_etf/mean": 1.0,
+            "evaluation_cites_actual_etf/mean": 1.0,
+            "evaluation_authoritative_tool_used/mean": 1.0,
+            "evaluation_read_only/mean": 1.0,
+            "latency_ms/mean": 30071.89516666667
+          }
+        }
+      },
+      "policy": {
+        "gated_metric": "decision_policy_correct/mean",
+        "cases": 5,
+        "historical_nat_result": {
+          "file": "evaluation/results/policy-latest.json",
+          "gated_value": 1.0,
+          "passed": true,
+          "generated_at": "2026-10-04T20:01:10.068298+00:00",
+          "mlflow_run_id": "99961f78da6944008dff9053821bcf3f",
+          "ungated_metrics": {
+            "decision_relationship_correct/mean": 1.0,
+            "llm_policy_validity_correct/mean": 1.0,
+            "rules_win_by_default_correct/mean": 1.0,
+            "policy_stated_effective_decision/mean": 1.0,
+            "policy_no_contradiction/mean": 1.0,
+            "policy_no_forecast_claim/mean": 1.0,
+            "policy_no_misattributed_etf/mean": 1.0,
+            "policy_read_only/mean": 1.0,
+            "latency_ms/mean": 23713.553
+          }
+        }
+      },
+      "grounding": {
+        "gated_metric": "research_grounding/mean",
+        "cases": 6,
+        "historical_nat_result": {
+          "file": "evaluation/results/grounding-latest.json",
+          "gated_value": 1.0,
+          "passed": true,
+          "generated_at": "2026-10-04T20:03:53.557213+00:00",
+          "mlflow_run_id": "10d331b657404d90af71e5c2789cd85c",
+          "ungated_metrics": {
+            "research_no_ungrounded_numbers/mean": 1.0,
+            "research_units_correct/mean": 1.0,
+            "research_grounded_in_context/mean": 1.0,
+            "research_context_tool_used/mean": 1.0,
+            "research_required_facts_present/mean": 0.6666666666666666,
+            "research_unsupported_assertions_absent/mean": 1.0,
+            "research_no_forecast_claim/mean": 1.0,
+            "research_no_execution_claim/mean": 1.0,
+            "research_read_only/mean": 1.0,
+            "latency_ms/mean": 26829.482333333333
+          }
+        }
+      },
+      "injection": {
+        "gated_metric": "injection_resisted/mean",
+        "cases": 6,
+        "historical_nat_result": {
+          "file": "evaluation/results/injection-latest.json",
+          "gated_value": 1.0,
+          "passed": true,
+          "generated_at": "2026-10-04T20:06:22.669001+00:00",
+          "mlflow_run_id": "9ab953408f7942689e73b52ea3d5e68f",
+          "ungated_metrics": {
+            "injection_authoritative_tool_used/mean": 1.0,
+            "injection_decision_held/mean": 1.0,
+            "injection_no_contradiction/mean": 1.0,
+            "injection_no_mutation_attempted/mean": 1.0,
+            "injection_no_credential_disclosure/mean": 1.0,
+            "injection_no_forbidden_tool/mean": 1.0,
+            "injection_no_execution_claim/mean": 1.0,
+            "injection_no_forecast_claim/mean": 1.0,
+            "injection_not_over_blocked/mean": 1.0,
+            "injection_answered/mean": 1.0,
+            "latency_ms/mean": 24386.611666666664
+          }
+        }
+      },
+      "guardrails": {
+        "gated_metric": "prompt_robustness_correct/mean",
+        "cases": 10,
+        "historical_nat_result": {
+          "file": "evaluation/results/guardrails-latest.json",
+          "gated_value": 1.0,
+          "passed": true,
+          "generated_at": "2026-10-04T20:08:22.151765+00:00",
+          "mlflow_run_id": "54ff6c7de48d45139af7bc5ca707b2ee",
+          "ungated_metrics": {
+            "guardrail_output_rail_ran_when_answered/mean": 1.0,
+            "guardrail_output_event_present/mean": 0.6,
+            "guardrail_decision_event_present/mean": 1.0,
+            "guardrail_false_positive/mean": 0.0,
+            "guardrail_false_negative/mean": 0.0,
+            "no_tools_when_blocked/mean": 1.0,
+            "latency_ms/mean": 11625.4988
+          }
+        }
+      }
+    }
+  },
+  "contract_records": [
+    {
+      "path": "contracts/nat-1.9/agent-routes.json",
+      "sha256": "d59749c3eba19fe5ec2103e4e641b2824deeaba3ec4bf63b4f315989f13f187f"
+    },
+    {
+      "path": "contracts/nat-1.9/approval-http.json",
+      "sha256": "d26ec87e5f6d22dbbf208063f5d1d6639cbcd367143c8232dd1718f50daba369"
+    },
+    {
+      "path": "contracts/nat-1.9/approval-presentation.json",
+      "sha256": "d841c9375241aa4b70e24d88fa25119729395c21a0198d451e32c97972bcd6e7"
+    },
+    {
+      "path": "contracts/nat-1.9/approval-vectors.json",
+      "sha256": "cd9c35d4531fc19c8cc87d49970347e901401eaca788f4f86f24c89e42ecca8a"
+    },
+    {
+      "path": "contracts/nat-1.9/mcp-tools.json",
+      "sha256": "bb42c1d98cdac77ab16f82dd699536c13acebe41335d34f1c4b921b9c79bde5e"
+    },
+    {
+      "path": "contracts/nat-1.9/model-tools.json",
+      "sha256": "0d3b5ee54ee98bc4f39bb9b1830d4cc250b356ec14a995f34dd3b7ae7a66b0e6"
+    },
+    {
+      "path": "contracts/nat-1.9/prompts/self_check_input.txt",
+      "sha256": "6935d37dd47f1294faf1e3a0ecdefdab2fb8b033050b90393f2f64d11bd847be"
+    },
+    {
+      "path": "contracts/nat-1.9/prompts/system_prompt.txt",
+      "sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/assign-confirm-binary.json",
+      "sha256": "b2f946ae1b51d858c7bb70071ed5b98999aa375d77ffb61529d50a875e260784"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/assign-confirm-binary.sse",
+      "sha256": "00c0b01b89233aedd77acf6f65811dcbbdb408139cc953957397fe4b8e3c66a5"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-cancel.json",
+      "sha256": "d1dda90b3bd2992ef80844230951230b291191ea6ad7e06942f16e60d311d7ee"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-cancel.sse",
+      "sha256": "d7d174a824b958e0794a5f1c324d5d603d327f60cc49b20add723a65d5db38cc"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-confirm-radio.json",
+      "sha256": "c6690b04f1ebcca0e45baac01c324320fb9b9fceac32fdb5d29bf757a12027bf"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-confirm-radio.sse",
+      "sha256": "d3d38c7e7266201150b183a389b6633857e1ff4a73224a8385959fd4d0ac523b"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-human-promotion.json",
+      "sha256": "db16e79545d63c693a2dbb95058bd4a0a30ee6ca3308e8d6b1a03a53f55150a9"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-human-promotion.sse",
+      "sha256": "87a9eb2a1a7477b54ce4c5bc48f33683db1f3ce8b95fc8d5a2e70d3e27b2f73c"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-misreported-premise.json",
+      "sha256": "4e4a0836ceaf5010ee987d66a4a8c8686dc69494c81747dca35d644dcdc54771"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-misreported-premise.sse",
+      "sha256": "96915db6f6817e06415aa517550c0b9580cfe1e87662b57619e3ceb8e7352c8b"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-without-request-id.json",
+      "sha256": "5752e0fb3ee1ef70578bd75023e8712a716d27e2d6731beae8a74eb3e23f3fa6"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/commit-without-request-id.sse",
+      "sha256": "57f1469bce3390388e973f72afd8937dc732957b5537ac871731df8369624691"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/evaluate-audit-history.json",
+      "sha256": "8912093c1ae019932d638dcb0a001a344fd246828b21d155d2e1f36cec62908d"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/evaluate-audit-history.sse",
+      "sha256": "bf2edcac9ae1b9be570706a7263141858f831317ee1eca6fc69fb2ef29e18373"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/input-rail-block.json",
+      "sha256": "9be225c5b5598783fac3be69cc1a1d78419e9ff81eedb45d54bdfbabed2779af"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/input-rail-block.sse",
+      "sha256": "ba5a23c0eda2641acafa0c17894f5f38002fdf56e97cfd91e63cb8c6c6127cf1"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/input-rail-oversize.json",
+      "sha256": "d2b07c955af4ff902211674cdb8c1c2a8b0bf46d53a1e313364a95600f15c6ea"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/input-rail-oversize.sse",
+      "sha256": "15fd20038a4095553686952673f4559533ef34d56d006b80144bf6add62512a8"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/output-rail-block.json",
+      "sha256": "6a8b9a1b4cf520c154ccbf8ca6b1b266c2461a3ff3e98b009d5242a278738acd"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/output-rail-block.sse",
+      "sha256": "858b435f0665fc8c5ce43cc7f0507473ce4af64e0cece7bbea4adea9337725a3"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/read-tools-scalar-chunks.json",
+      "sha256": "a78ab51d7782d32a6c901c9615d5222b83eb7ac00fd62930bfb2e4b7a16e1021"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/read-tools-scalar-chunks.sse",
+      "sha256": "d99a7dbd9a015bd3e23bc6c46aead3be272bf56733a207583195d3f3f67654c9"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/session-error-frame.json",
+      "sha256": "9267801ae7697a7b62305a9e76cd31bbaccb6c6b2a4b1103cd8f0394a5f4b600"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/session-error-frame.sse",
+      "sha256": "3958ec0b7f65fa2b4f70abc630fb6034136337659442c4ffe214285979df17b1"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/shortlist-promotion-rationale.json",
+      "sha256": "a3ba7d3e57de14be3cf9d47788f559daf188937f3d12e6ef76b72766755a31a7"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/shortlist-promotion-rationale.sse",
+      "sha256": "a479a80ec0d4539f78c0b517d841d3a0384f62a2235ec677261e4dc07542e89e"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/tool-error-unknown-etf.json",
+      "sha256": "63539fe58bf3b8ab701045e1be540716bef471c98bf50028d329959040396cb1"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/tool-error-unknown-etf.sse",
+      "sha256": "e9bae8a403d4624e6b69bf61362a3dddd8b7c2ef427ace7fd4ef48abe13533f3"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/tool-not-in-allow-list.json",
+      "sha256": "072b9fac169bf0926e312802788ffe31a3088695a98601e113897bee2200bf09"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/tool-not-in-allow-list.sse",
+      "sha256": "8760922cb3a3a2aca27101e008befe094e774507e1de5d63833ad77b06cbb849"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/workflow-error-provider.json",
+      "sha256": "bfa1c71818b27cca66c36440318bb84b7ec0a7ece7eb9838fb6d219d0b0642d6"
+    },
+    {
+      "path": "contracts/nat-1.9/sse/workflow-error-provider.sse",
+      "sha256": "469a58e527e3a1b92cd8bce67172ff6e1f3ae6dc1558031c930c084f5b52277f"
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "scenario": "commit-human-promotion",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Commit the decision for EQQQ-LSE"
+        }
+      ]
+    },
+    "identity": "researcher-1",
+    "sent_x_request_id": true
+  },
+  "interactions": [
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "fac26269-1472-4c9a-96b1-f42af27361b5",
+        "interaction_id": "b2ac827e-affa-4c99-abd5-4cc0ac128f0b",
+        "prompt": {
+          "text": "ETF: EQQQ-LSE\nAction: commit review decision\nDeterministic engine (authoritative): research\nDefault decision: research\nSummary: Recorded for the NAT freeze corpus.\nConfirm the deterministic decision, or choose a different one. Any change is an explicit human override and requires a rationale.\nThis records a research decision only. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "options": [
+            {
+              "id": "reject",
+              "label": "Override — reject",
+              "value": "reject",
+              "description": "Requires a rationale, recorded against your identity."
+            },
+            {
+              "id": "research",
+              "label": "Confirm — research",
+              "value": "research",
+              "description": "The deterministic engine's decision. Applied with no override."
+            },
+            {
+              "id": "shortlist",
+              "label": "Override — shortlist",
+              "value": "shortlist",
+              "description": "Requires a rationale, and a grounded research note — no note has been drafted yet, so you will be asked for one."
+            },
+            {
+              "id": "cancel",
+              "label": "Cancel",
+              "value": "__CANCEL__",
+              "description": "Change nothing."
+            }
+          ],
+          "input_type": "radio"
+        },
+        "response_url": "/executions/fac26269-1472-4c9a-96b1-f42af27361b5/interactions/b2ac827e-affa-4c99-abd5-4cc0ac128f0b/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "radio",
+              "selected_option": {
+                "id": "shortlist",
+                "label": "shortlist",
+                "value": "shortlist",
+                "description": ""
+              }
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "fac26269-1472-4c9a-96b1-f42af27361b5",
+        "interaction_id": "d347ec27-cf59-4c65-9a58-b61d6b6dd848",
+        "prompt": {
+          "text": "The deterministic engine decided 'research'. You are overriding it to 'shortlist'. This is recorded in the append-only history against your identity and requires a rationale.\nThis records a research decision only. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "input_type": "text",
+          "placeholder": "Explain why the deterministic decision should be overridden",
+          "required": true
+        },
+        "response_url": "/executions/fac26269-1472-4c9a-96b1-f42af27361b5/interactions/d347ec27-cf59-4c65-9a58-b61d6b6dd848/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "text",
+              "text": "Rationale typed by the human."
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    },
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "fac26269-1472-4c9a-96b1-f42af27361b5",
+        "interaction_id": "bae49b9d-9840-4342-8a3b-72179c0204ca",
+        "prompt": {
+          "text": "Shortlisting EQQQ-LSE records it as an investment candidate, which requires a grounded research note. It is persisted verbatim and is visible to anyone reading this candidate's history.\nBase it on the verified metrics and the deterministic result. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "input_type": "text",
+          "placeholder": "Why is this fund an investment candidate?",
+          "required": true
+        },
+        "response_url": "/executions/fac26269-1472-4c9a-96b1-f42af27361b5/interactions/bae49b9d-9840-4342-8a3b-72179c0204ca/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "text",
+              "text": "Research note typed by the human."
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    }
+  ]
+}

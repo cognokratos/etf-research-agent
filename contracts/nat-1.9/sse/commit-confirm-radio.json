@@ -1,0 +1,120 @@
+{
+  "scenario": "commit-confirm-radio",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Commit the decision for CW8-EPA"
+        }
+      ]
+    },
+    "identity": "researcher-1",
+    "sent_x_request_id": true
+  },
+  "interactions": [
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "3b5aaf4c-2ea3-4d76-b855-bf525d65b487",
+        "interaction_id": "82640bd6-aad4-41e5-afa3-7c0f2b38d83b",
+        "prompt": {
+          "text": "ETF: CW8-EPA\nAction: commit review decision\nDeterministic engine (authoritative): research\nModel recommendation (advisory only): research\nDefault decision: research\nSummary: Recorded for the NAT freeze corpus.\nConfirm the deterministic decision, or choose a different one. Any change is an explicit human override and requires a rationale.\nThis records a research decision only. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "options": [
+            {
+              "id": "reject",
+              "label": "Override — reject",
+              "value": "reject",
+              "description": "Requires a rationale, recorded against your identity."
+            },
+            {
+              "id": "research",
+              "label": "Confirm — research",
+              "value": "research",
+              "description": "The deterministic engine's decision. Applied with no override."
+            },
+            {
+              "id": "shortlist",
+              "label": "Override — shortlist",
+              "value": "shortlist",
+              "description": "Requires a rationale, and a grounded research note — no note has been drafted yet, so you will be asked for one."
+            },
+            {
+              "id": "cancel",
+              "label": "Cancel",
+              "value": "__CANCEL__",
+              "description": "Change nothing."
+            }
+          ],
+          "input_type": "radio"
+        },
+        "response_url": "/executions/3b5aaf4c-2ea3-4d76-b855-bf525d65b487/interactions/82640bd6-aad4-41e5-afa3-7c0f2b38d83b/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "radio",
+              "selected_option": {
+                "id": "research",
+                "label": "research",
+                "value": "research",
+                "description": ""
+              }
+            },
+            "user": "intruder"
+          },
+          "status": 500,
+          "body": "Internal Server Error"
+        },
+        {
+          "sent": {
+            "response": {
+              "type": "radio",
+              "selected_option": {
+                "id": "research",
+                "label": "research",
+                "value": "shortlist",
+                "description": ""
+              }
+            }
+          },
+          "status": 500,
+          "body": "Internal Server Error"
+        },
+        {
+          "sent": {
+            "response": {
+              "type": "text",
+              "text": "wrong type"
+            }
+          },
+          "status": 500,
+          "body": "Internal Server Error"
+        },
+        {
+          "sent": {
+            "response": {
+              "type": "radio",
+              "selected_option": {
+                "id": "research",
+                "label": "research",
+                "value": "research",
+                "description": ""
+              }
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    }
+  ]
+}
