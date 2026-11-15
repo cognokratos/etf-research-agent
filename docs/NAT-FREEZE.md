@@ -37,7 +37,7 @@ they match the issue.
 | `make nat-freeze-check` | manifest digests, both prompts, domain invariants, five suite gates | python3 |
 | `make eval-test-host` | the recorded SSE corpus through the evaluator's real client (`test_nat_contract_corpus.py`) | python3 |
 | `make verify-nat-corpus` | the same corpus through the real UI chat route | node 22 |
-| `make rules-test` | includes `contract::` — MCP tool snapshot, model-visible subset, action registry, Python→Rust token vectors | cargo |
+| `make rules-test` | includes `contract::` — MCP tool snapshot, semantic schema compatibility of the model-visible tools (types, nullability, required, enums, bounds, nested shapes, defaults) with negative mutations, frozen approval-function constraints, action registry, Python→Rust token vectors | cargo |
 | `cargo test` in `gateway/` | every recorded prompt option and response passes the gateway's structural validation | cargo |
 | `make verify-nat-contract PYTHON=…` | the Python agent still produces the vectors, prompt options, function schemas, `/version` fields and interaction statuses | a venv with NAT 1.9 |
 
@@ -82,6 +82,15 @@ every consumer, in one change.
 
 Tagged **N** there; the important ones are under [findings](#findings).
 
+### Intended Rust behaviour is not frozen NAT behaviour
+
+The records under `contracts/nat-1.9/` describe NAT, defects included. Where #5
+or a later issue does better — liveness and readiness probes, aborting a run on
+disconnect, expiring prompts, `403`/`422`/`410` for refused interaction
+responses, error classes instead of provider text — that is an **intended
+change**, recorded in the issue that makes it and tested there. It is never
+written back into these records, and the records never argue against it.
+
 ## Tool surface and trust boundaries
 
 The model can call nine things: six MCP reads and three agent-local approval
@@ -106,7 +115,7 @@ Not visible to the model, but **published by the MCP server**:
 `include:` allow-list. The model cannot mint a token, so a call would still be
 refused, but a runtime that exposes every discovered tool would hand the model
 three mutation entry points. `contract::the_server_publishes_six_read_tools_and_three_token_taking_mutations`
-and `contract::the_model_saw_only_the_read_tools_with_this_servers_properties`
+and `contract::the_model_saw_only_the_read_tools_with_this_servers_schemas`
 pin both facts; issue #6 should make discovery refuse them rather than rely on
 an allow-list.
 
@@ -227,7 +236,8 @@ emit only the bare `workflow_error` block.
 
 ### Smaller ones
 
-* `/health/live` and `/health/ready` are 404 under NAT.
+* `/health/live` and `/health/ready` are 404 under NAT. The Rust agent adding
+  them (#5) is an intended improvement, not a compatibility requirement.
 * NAT serves ten unconsumed authenticated routes; `GET /executions/{e}` shows a
   pending prompt to any keyed caller, owner or not.
 * NAT accepts `system`/`tool` roles and unknown fields from a direct caller; only
@@ -306,7 +316,15 @@ check `git merge-base --is-ancestor nat-1.9-final main` first.
 
 ## Recommendations for #5
 
-1. Serve exactly the four consumed routes; reuse the `401` bodies verbatim.
+1. Preserve the four application-consumed routes — `GET /health`,
+   `GET /version`, `POST /v1/workflow/full`, `POST /executions/{e}/interactions/{i}/response`
+   — with the semantics recorded in
+   [AGENT-SERVICE-CONTRACT.md](AGENT-SERVICE-CONTRACT.md#routes), and reuse the
+   `401` bodies verbatim. Additionally expose `GET /health/live` and
+   `GET /health/ready` as deliberate operational improvements (NAT serves
+   neither). Do not reproduce NAT's unused workflow, chat, Swagger/OpenAPI,
+   evaluation, MCP-listing or execution-inspection routes for compatibility; see
+   [frozen versus intended routes](AGENT-SERVICE-CONTRACT.md#frozen-nat-routes-versus-intended-rust-routes).
 2. Keep the SSE vocabulary of the corpus; replay `contracts/nat-1.9/sse/`
    through a Rust implementation's own output in its contract test, the way the
    template's `agent/tests/contract.rs` does.

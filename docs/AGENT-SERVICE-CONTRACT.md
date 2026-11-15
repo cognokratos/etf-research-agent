@@ -48,7 +48,21 @@ calls: `POST /v1/workflow`, `/v1/workflow/stream`, `/v1/workflow/atif`,
 `/v1/chat`, `/v1/chat/stream`, `/v1/chat/completions`, `/evaluate/item`,
 `GET /executions/{e}`, `GET /mcp/client/tool/list`,
 `GET /mcp/client/tool/list/per_user`, `GET /auth/redirect`, `/docs`,
-`/openapi.json`. **N** — a replacement serves only the four routes above.
+`/openapi.json`. **N** — not reproduced for compatibility.
+
+### Frozen NAT routes versus intended Rust routes
+
+Two different things, kept apart on purpose:
+
+| | Routes | Status |
+| --- | --- | --- |
+| **Frozen** — what NAT serves *and* something here consumes | the four in the table above, with the semantics this page records | must be preserved by the replacement |
+| **Intended Rust additions** | unauthenticated `GET /health/live` (process up) and `GET /health/ready` (the agent can reach what it needs, e.g. the MCP session is open), as issue #5 requires | deliberate operational improvements, not NAT behaviour; NAT answers 404 to both |
+| **Not carried over** | the ten unconsumed NAT routes listed above (workflow and chat variants, Swagger/OpenAPI, `/evaluate/item`, MCP tool listing, `/auth/redirect`, `GET /executions/{e}`) | NAT-only; reproducing them would only widen the authenticated surface. `GET /executions/{e}` in particular leaks pending prompts across users |
+
+`GET /health` stays, since the Compose healthcheck calls it; the new probes sit
+beside it, not in place of it. Adding them means `PUBLIC_PATHS` finally
+describes what is served — under NAT it lists two paths that 404.
 `GET /executions/{e}` deserves a note: it returns a pending prompt, text
 included, to *any* keyed caller with an identity, without the owner check the
 response route has.
@@ -266,7 +280,7 @@ a tool error rather than the structured `committed:false` result.
 
 | Template says | ETF NAT actually | Consequence for #5 |
 | --- | --- | --- |
-| `GET /health/live`, `/health/ready` exist | 404; only `/health` | serve `/health`; adding the others is harmless |
+| `GET /health/live`, `/health/ready` exist | 404; only `/health` | keep `/health`; add both probes as an intended improvement ([above](#frozen-nat-routes-versus-intended-rust-routes)) |
 | tool steps are `TOOL_START`/`TOOL_END` | `FUNCTION_START`/`FUNCTION_END` | either works for both consumers; pick one and record it |
 | tools named `tickets_mcp__…` | `etf_mcp__…`; approval functions unprefixed | consumers match by suffix |
 | error block `{"error":"workflow_error","message"}` | `{"code":"workflow_error","message","details"}` | both consumers read only `message`; keep `message` |

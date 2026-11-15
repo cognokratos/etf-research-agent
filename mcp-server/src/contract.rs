@@ -8,8 +8,8 @@
 //!   descriptions and input schemas exactly. The model sees only six of the nine;
 //!   the agent's allow-list is what hides the three token-taking mutations.
 //! * `model-tools.json` — what NAT actually sent the model. Its MCP tools must be a
-//!   subset of this server's, with the same properties, and must never include a
-//!   tool that accepts an `approval_token`.
+//!   subset of this server's with semantically equal input schemas (see
+//!   [`schema`]), and must never include a tool that accepts an `approval_token`.
 //! * `approval-vectors.json` — tokens minted by the Python agent. This verifier
 //!   must accept each signature and reproduce every byte the minter signed.
 //!
@@ -28,6 +28,8 @@ use sha2::Sha256;
 use crate::approval::{find_action, payload_hash, testing, ApprovalClaims, ACTIONS};
 use crate::fixtures::repo_root;
 use crate::server::EtfMcpServer;
+
+mod schema;
 
 fn contract_path(name: &str) -> PathBuf {
     repo_root().join("contracts/nat-1.9").join(name)
@@ -111,55 +113,137 @@ fn the_server_publishes_six_read_tools_and_three_token_taking_mutations() {
     }
 }
 
-/// What NAT sent the model must be this server's read tools, unchanged in shape,
-/// plus the three agent-local approval functions — and never a token-taking tool.
-#[test]
-fn the_model_saw_only_the_read_tools_with_this_servers_properties() {
+/// The six model-visible MCP tools, as `(name the model saw, NAT parameters,
+/// this server's inputSchema)`.
+fn model_visible_pairs() -> Vec<(String, Value, Value)> {
     let model = read_contract("model-tools.json");
     let published = published_tools();
-    let mut seen_mcp = BTreeSet::new();
-    let mut seen_local = BTreeSet::new();
+    model["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .filter_map(|tool| {
+            let name = tool["function"]["name"].as_str()?;
+            let mcp_name = name.strip_prefix("etf_mcp__")?;
+            let source = published
+                .as_array()
+                .expect("array")
+                .iter()
+                .find(|candidate| candidate["name"] == mcp_name)
+                .unwrap_or_else(|| panic!("model saw {name}, which this server does not publish"));
+            Some((name.to_string(), tool["function"]["parameters"].clone(), source["inputSchema"].clone()))
+        })
+        .collect()
+}
 
+/// What NAT sent the model must be this server's read tools, semantically
+/// unchanged — types, nullability, required, enums, bounds, nested shapes and
+/// non-null defaults, compared through [`schema::differences`] so pydantic's
+/// `anyOf[T, null]` and schemars' `["T", "null"]` are equal — plus the three
+/// agent-local approval functions, and never a token-taking tool.
+#[test]
+fn the_model_saw_only_the_read_tools_with_this_servers_schemas() {
+    let model = read_contract("model-tools.json");
+    let mut seen_local = BTreeSet::new();
     for tool in model["tools"].as_array().expect("tools") {
-        let function = &tool["function"];
-        let name = function["name"].as_str().expect("name");
-        let parameters = &function["parameters"];
-        match name.strip_prefix("etf_mcp__") {
-            Some(mcp_name) => {
-                seen_mcp.insert(mcp_name.to_string());
-                let source = published
-                    .as_array()
-                    .expect("array")
-                    .iter()
-                    .find(|candidate| candidate["name"] == mcp_name)
-                    .unwrap_or_else(|| panic!("model saw {name}, which this server does not publish"));
-                let keys = |schema: &Value| -> BTreeSet<String> {
-                    schema["properties"].as_object().map(|map| map.keys().cloned().collect()).unwrap_or_default()
-                };
-                assert_eq!(keys(parameters), keys(&source["inputSchema"]), "{name}: property set");
-                let required = |schema: &Value| -> BTreeSet<String> {
-                    schema["required"]
-                        .as_array()
-                        .map(|list| list.iter().filter_map(Value::as_str).map(str::to_string).collect())
-                        .unwrap_or_default()
-                };
-                assert_eq!(required(parameters), required(&source["inputSchema"]), "{name}: required set");
-            }
-            None => {
-                seen_local.insert(name.to_string());
-                assert!(
-                    !parameters["properties"].as_object().expect("properties").contains_key("approval_token"),
-                    "{name}: an agent-local approval function must never take a token from the model"
-                );
-            }
+        let name = tool["function"]["name"].as_str().expect("name");
+        if !name.starts_with("etf_mcp__") {
+            seen_local.insert(name.to_string());
+            assert!(
+                !tool["function"]["parameters"]["properties"].as_object().expect("properties").contains_key("approval_token"),
+                "{name}: an agent-local approval function must never take a token from the model"
+            );
         }
     }
 
+    let pairs = model_visible_pairs();
+    let seen_mcp: BTreeSet<String> =
+        pairs.iter().map(|(name, _, _)| name.trim_start_matches("etf_mcp__").to_string()).collect();
     let expected_mcp: BTreeSet<String> = MODEL_VISIBLE_MCP_TOOLS.iter().map(|n| n.to_string()).collect();
     assert_eq!(seen_mcp, expected_mcp, "the model-visible MCP tools are the six read tools");
+    for (name, model_schema, server_schema) in &pairs {
+        let differences = schema::differences(model_schema, server_schema);
+        assert!(differences.is_empty(), "{name}: model-visible schema differs from this server's: {differences:#?}");
+    }
+
     let expected_local: BTreeSet<String> =
         ["assign_etf", "commit_evaluation", "shortlist_etf"].iter().map(|n| n.to_string()).collect();
     assert_eq!(seen_local, expected_local, "the three approval-gated functions are agent-local");
+}
+
+/// The comparison above is only worth something if it fails. Each mutation is
+/// applied to a copy of this server's real published schema and must be named.
+#[test]
+fn an_incompatible_change_to_a_published_schema_is_detected() {
+    let pairs = model_visible_pairs();
+    let schema_of = |tool: &str| -> (Value, Value) {
+        let (_, model, server) =
+            pairs.iter().find(|(name, _, _)| name == &format!("etf_mcp__{tool}")).expect("tool").clone();
+        (model, server)
+    };
+    type Mutation = Box<dyn Fn(&mut Value)>;
+    let mutations: Vec<(&str, &str, Mutation)> = vec![
+        ("evaluate_etf", "llm_recommendation: type", Box::new(|s| s["properties"]["llm_recommendation"]["type"] = json!(["integer", "null"]))),
+        ("search_etfs", "ucits: nullable", Box::new(|s| s["properties"]["ucits"]["type"] = json!("boolean"))),
+        ("search_etfs", "min_investment_score: bounds", Box::new(|s| s["properties"]["min_investment_score"]["maximum"] = json!(100))),
+        ("search_etfs", "decision: enum", Box::new(|s| s["properties"]["decision"]["enum"] = json!(["reject", "research", "shortlist"]))),
+        ("get_etf_history", "limit: default", Box::new(|s| s["properties"]["limit"]["default"] = json!(50))),
+        ("get_etf", "$: required", Box::new(|s| s["required"] = json!([]))),
+        ("get_etf", "etf: type", Box::new(|s| s["properties"]["etf"]["type"] = json!("array"))),
+        ("get_research_context", "unexpected property", Box::new(|s| s["properties"]["actor_id"] = json!({"type": "string"}))),
+        ("get_research_summary", "additionalProperties", Box::new(|s| s["additionalProperties"] = json!(false))),
+    ];
+    for (tool, needle, mutate) in mutations {
+        let (model, mut server) = schema_of(tool);
+        assert!(schema::differences(&model, &server).is_empty(), "{tool}: baseline must pass first");
+        mutate(&mut server);
+        let found = schema::differences(&model, &server);
+        assert!(found.iter().any(|difference| difference.contains(needle)), "{tool}: expected {needle:?}, got {found:?}");
+    }
+}
+
+/// The agent-local approval functions have no MCP counterpart to compare with,
+/// so their model-facing constraints are pinned here as the bar a Rust port
+/// must meet: the decision vocabulary, the length bounds, what is required.
+#[test]
+fn the_approval_functions_model_facing_constraints_are_frozen() {
+    let model = read_contract("model-tools.json");
+    let parameters = |name: &str| -> schema::Shape {
+        let tool = model["tools"].as_array().expect("tools").iter().find(|t| t["function"]["name"] == name).expect(name);
+        let schema = &tool["function"]["parameters"];
+        schema::shape(schema, schema).expect("readable")
+    };
+    let decisions: BTreeSet<String> = ["\"reject\"", "\"research\"", "\"shortlist\""].iter().map(|s| s.to_string()).collect();
+    let bounds = |pairs: &[(&str, &str)]| -> std::collections::BTreeMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    };
+    let set = |names: &[&str]| -> BTreeSet<String> { names.iter().map(|n| n.to_string()).collect() };
+
+    let commit = parameters("commit_evaluation");
+    assert_eq!(commit.required, set(&["etf_id", "rules_decision", "requested_decision", "summary"]));
+    for field in ["rules_decision", "requested_decision"] {
+        let shape = &commit.properties[field];
+        assert_eq!((shape.enumeration.as_ref(), shape.nullable), (Some(&decisions), false), "{field}");
+    }
+    let recommendation = &commit.properties["llm_recommendation"];
+    assert_eq!((recommendation.enumeration.as_ref(), recommendation.nullable), (Some(&decisions), true));
+    assert_eq!(commit.properties["research_note"].bounds, bounds(&[("maxLength", "4000")]));
+    assert!(commit.properties["research_note"].nullable);
+    assert_eq!(commit.properties["summary"].bounds, bounds(&[("maxLength", "1500"), ("minLength", "1")]));
+    assert_eq!(commit.properties["etf_id"].bounds, bounds(&[("minLength", "1")]));
+
+    let shortlist = parameters("shortlist_etf");
+    assert_eq!(shortlist.required, set(&["etf_id", "rules_decision", "research_note", "summary"]));
+    assert_eq!(shortlist.properties["rules_decision"].enumeration.as_ref(), Some(&decisions));
+    assert_eq!(shortlist.properties["research_note"].bounds, bounds(&[("maxLength", "4000"), ("minLength", "1")]));
+    assert!(!shortlist.properties["research_note"].nullable, "a shortlist note is mandatory");
+
+    let assign = parameters("assign_etf");
+    assert_eq!(assign.required, set(&["etf_id", "assignee", "summary"]));
+    assert_eq!(assign.properties["assignee"].bounds, bounds(&[("maxLength", "200"), ("minLength", "1")]));
+    for shape in [&commit, &shortlist, &assign] {
+        assert!(!shape.properties.contains_key("actor_id") && !shape.properties.contains_key("request_id"));
+    }
 }
 
 #[test]
