@@ -172,7 +172,8 @@ fn the_model_saw_only_the_read_tools_with_this_servers_schemas() {
 }
 
 /// The comparison above is only worth something if it fails. Each mutation is
-/// applied to a copy of this server's real published schema and must be named.
+/// applied to a copy of this server's real published schema and must be named;
+/// a keyword the comparison cannot represent is refused, never ignored.
 #[test]
 fn an_incompatible_change_to_a_published_schema_is_detected() {
     let pairs = model_visible_pairs();
@@ -192,6 +193,9 @@ fn an_incompatible_change_to_a_published_schema_is_detected() {
         ("get_etf", "etf: type", Box::new(|s| s["properties"]["etf"]["type"] = json!("array"))),
         ("get_research_context", "unexpected property", Box::new(|s| s["properties"]["actor_id"] = json!({"type": "string"}))),
         ("get_research_summary", "additionalProperties", Box::new(|s| s["additionalProperties"] = json!(false))),
+        ("get_etf", r#"$.etf: unsupported keyword "allOf""#, Box::new(|s| s["properties"]["etf"]["allOf"] = json!([{"minLength": 10}]))),
+        ("search_etfs", r#"$.ucits: unsupported keyword "not""#, Box::new(|s| s["properties"]["ucits"]["not"] = json!({"const": false}))),
+        ("evaluate_etf", r#"$: unsupported keyword "if""#, Box::new(|s| s["if"] = json!({"required": ["etf_id"]}))),
     ];
     for (tool, needle, mutate) in mutations {
         let (model, mut server) = schema_of(tool);

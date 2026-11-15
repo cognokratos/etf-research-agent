@@ -37,7 +37,7 @@ they match the issue.
 | `make nat-freeze-check` | manifest digests, both prompts, domain invariants, five suite gates | python3 |
 | `make eval-test-host` | the recorded SSE corpus through the evaluator's real client (`test_nat_contract_corpus.py`) | python3 |
 | `make verify-nat-corpus` | the same corpus through the real UI chat route | node 22 |
-| `make rules-test` | includes `contract::` — MCP tool snapshot, semantic schema compatibility of the model-visible tools (types, nullability, required, enums, bounds, nested shapes, defaults) with negative mutations, frozen approval-function constraints, action registry, Python→Rust token vectors | cargo |
+| `make rules-test` | includes `contract::` — MCP tool snapshot, semantic schema compatibility of the model-visible tools (types, nullability, required, enums, bounds, nested shapes, defaults) with negative mutations; keywords it cannot represent (`allOf`, `not`, `if`/`then`/`else`, constraints beside `$ref`, …) are refused rather than ignored, and integer bounds are compared exactly; frozen approval-function constraints, action registry, Python→Rust token vectors | cargo |
 | `cargo test` in `gateway/` | every recorded prompt option and response passes the gateway's structural validation | cargo |
 | `make verify-nat-contract PYTHON=…` | the Python agent still produces the vectors, prompt options, function schemas, `/version` fields and interaction statuses | a venv with NAT 1.9 |
 

@@ -16,7 +16,7 @@ failure is a defect rather than variance.
 
 | Area | Command | Result |
 |---|---|---|
-| Deterministic evaluation engine | `make rules-test` | 112 Rust tests (1 ignored lab helper), 20/20 labelled cases, 31/31 funds within range |
+| Deterministic evaluation engine | `make rules-test` | 122 Rust tests (1 ignored lab helper), 20/20 labelled cases, 31/31 funds within range |
 | Authentication gateway | `cargo test` in `gateway/` | 55 tests |
 | Evaluator parsers and scorers | `make static-check` | 125 Python tests (3 skip without PyYAML) |
 | Fixture, profile and policy integrity | `make etf-check` | 31 listings / 30 funds, unique IDs, valid ISINs, graded provenance, cross-listings consistent |
