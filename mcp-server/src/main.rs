@@ -29,6 +29,8 @@ mod server;
 mod store;
 
 #[cfg(test)]
+mod contract;
+#[cfg(test)]
 mod fixtures;
 #[cfg(test)]
 mod lab;

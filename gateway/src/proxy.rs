@@ -643,4 +643,70 @@ mod tests {
         assert_eq!(header("x-authenticated-roles"), Some("researcher,reviewer"));
         assert!(header("x-authenticated-email").is_some(), "email header was dropped");
     }
+
+    /// The frozen NAT 1.9 corpus (`contracts/nat-1.9/sse/*.json`) records the
+    /// prompts the agent actually offered and the responses actually sent. Every
+    /// offered option, echoed back, must pass this layer; so must every recorded
+    /// response, including the ones the agent's interaction guard then refused —
+    /// which pins the split of responsibility: shape here, offered-choice and
+    /// ownership in the agent.
+    #[test]
+    fn every_recorded_nat_prompt_option_and_response_passes_structural_validation() {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contracts/nat-1.9/sse");
+        let mut options_checked = 0;
+        let mut responses_checked = 0;
+        for entry in std::fs::read_dir(&corpus).expect("corpus directory") {
+            let path = entry.expect("entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let document: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
+            for interaction in document["interactions"].as_array().into_iter().flatten() {
+                let prompt = &interaction["prompt_event"]["prompt"];
+                let input_type = prompt["input_type"].as_str().expect("input_type");
+                for option in prompt["options"].as_array().into_iter().flatten() {
+                    let mut selected = option.clone();
+                    if input_type == "radio" && selected.get("description").is_none() {
+                        selected["description"] = serde_json::json!("");
+                    }
+                    let body = serde_json::json!({"response": {"type": input_type, "selected_option": selected}});
+                    let request: InteractionProxyRequest = serde_json::from_value(body)
+                        .unwrap_or_else(|error| panic!("{}: offered option does not parse: {error}", path.display()));
+                    assert!(validate_interaction_response(&request).is_ok(), "{}: {option}", path.display());
+                    options_checked += 1;
+                }
+                for response in interaction["responses"].as_array().into_iter().flatten() {
+                    let body = serde_json::json!({"response": response["sent"]["response"]});
+                    let request: InteractionProxyRequest = serde_json::from_value(body).expect("recorded response parses");
+                    assert!(validate_interaction_response(&request).is_ok(), "{}", path.display());
+                    responses_checked += 1;
+                }
+            }
+        }
+        assert!(options_checked >= 10, "radio and binary prompts were recorded");
+        assert!(responses_checked >= 10, "approval responses were recorded");
+    }
+
+    /// NAT's binary prompt carries `{id: "cancel", value: false}`, the radio
+    /// prompt `{id: "cancel", value: "__CANCEL__"}`. Both cancellations must
+    /// pass, and their crossed forms must not.
+    #[test]
+    fn both_recorded_cancellation_shapes_are_accepted_and_crossed_forms_refused() {
+        let parse = |raw: &str| serde_json::from_str::<InteractionProxyRequest>(raw).expect("parses");
+        let ok = [
+            r#"{"response":{"type":"radio","selected_option":{"id":"cancel","label":"Cancel","value":"__CANCEL__","description":"Change nothing."}}}"#,
+            r#"{"response":{"type":"binary_choice","selected_option":{"id":"cancel","label":"Cancel","value":false}}}"#,
+        ];
+        for raw in ok {
+            assert!(validate_interaction_response(&parse(raw)).is_ok(), "{raw}");
+        }
+        let refused = [
+            r#"{"response":{"type":"radio","selected_option":{"id":"cancel","label":"Cancel","value":"research"}}}"#,
+            r#"{"response":{"type":"binary_choice","selected_option":{"id":"cancel","label":"Cancel","value":true}}}"#,
+        ];
+        for raw in refused {
+            assert!(validate_interaction_response(&parse(raw)).is_err(), "{raw}");
+        }
+    }
 }
