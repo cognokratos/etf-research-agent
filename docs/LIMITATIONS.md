@@ -92,6 +92,27 @@ evaluation, never from what the answer said. The `evaluation` suite measures the
 prose; the boundary does not depend on it. The same gap reaches the approval
 prompt itself; see the next section.
 
+## Found while freezing the NAT agent
+
+Measured against the running NAT 1.9 agent for the migration freeze and pinned
+in [`contracts/nat-1.9/`](../contracts/nat-1.9/README.md). Documented here, not
+fixed; [NAT-FREEZE.md](NAT-FREEZE.md#findings) names the issue that decides
+each.
+
+* **Closing the stream does not cancel a pending approval.** The prompt stays
+  answerable, and answering it resumes the workflow and applies the change with
+  no client attached. Pending prompts never expire.
+* **Interaction-guard refusals are HTTP 500.** Correctly refused and left
+  pending, but with NAT's unhandled-exception status rather than 403/422.
+* **A raising approval function is retried by NAT** (`tool_call_max_retries`),
+  including after the human answered if `/approvals/execute` returned non-2xx.
+* **The live suites cannot see an approval-function call that fails before
+  prompting**, which every one does under evaluation (no `x-request-id`). The
+  mutation-absent metrics pass vacuously for those attempts.
+* **`event: error` frames are ignored by the UI and the evaluator.** Not reached
+  in the shipped configuration.
+* **`/health/live` and `/health/ready` are not served** (404); only `/health` is.
+
 ## Known design limitations
 
 Current behaviour that is documented rather than fixed. Each is a design question

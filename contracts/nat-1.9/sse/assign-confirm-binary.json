@@ -1,0 +1,64 @@
+{
+  "scenario": "assign-confirm-binary",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Assign CW8-EPA to researcher-7"
+        }
+      ]
+    },
+    "identity": "researcher-1",
+    "sent_x_request_id": true
+  },
+  "interactions": [
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "163e6831-f474-4a71-ae13-6dafc3bb55cb",
+        "interaction_id": "aea1f38a-5702-4062-9e17-6e3b5a3ca2dc",
+        "prompt": {
+          "text": "ETF: CW8-EPA\nAction: assign a research owner\nResearch owner: researcher-7\nSummary: Recorded for the NAT freeze corpus.\nConfirm this state-changing action before it is applied.\nThis records a research decision only. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "input_type": "binary_choice",
+          "options": [
+            {
+              "id": "confirm",
+              "label": "Confirm",
+              "value": true
+            },
+            {
+              "id": "cancel",
+              "label": "Cancel",
+              "value": false
+            }
+          ]
+        },
+        "response_url": "/executions/163e6831-f474-4a71-ae13-6dafc3bb55cb/interactions/aea1f38a-5702-4062-9e17-6e3b5a3ca2dc/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "binary_choice",
+              "selected_option": {
+                "id": "confirm",
+                "label": "confirm",
+                "value": true
+              }
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    }
+  ]
+}

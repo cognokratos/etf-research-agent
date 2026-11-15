@@ -1,0 +1,294 @@
+{
+  "_comment": "tools/list as published by mcp-server (EtfMcpServer::tool_router). Asserted by contract::the_published_mcp_tool_list_matches_the_frozen_snapshot; regenerate with UPDATE_CONTRACTS=1 cargo test contract:: only for an intended change.",
+  "tools": [
+    {
+      "description": "Assign a research owner to an ETF after human confirmation. Available from RESEARCH, SHORTLISTED or ASSIGNED; reassignment is permitted. Unreviewed and rejected ETFs are not assignable. Pass only etf_id, approval_token and request_id: the owner is read from the signed approval token. A shortlisted ETF must already carry a research note. Assignment means this person owns the next research decision; it does not execute anything.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "approval_token": {
+            "description": "Human approval token minted for action=assign. It carries the approved\nresearch owner.",
+            "type": "string"
+          },
+          "etf_id": {
+            "description": "Exact etf_id.",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Authenticated gateway request ID. Must match the approval token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "etf_id",
+          "approval_token",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "name": "assign_etf"
+    },
+    {
+      "description": "Commit the initial review decision for an ETF after human confirmation. Only an UNREVIEWED ETF can be committed; this is the initial decision and is valid exactly once. State-changing and always approval-gated. Pass only etf_id, approval_token and request_id: the decision, override flag, rationale and research note are read from the signed approval token, so the committed decision is exactly the one the human approved. The deterministic result is recomputed and re-enforced, a more-optimistic model recommendation is rejected, overrides require a logged rationale, and hard constraints still apply.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "approval_token": {
+            "description": "Human approval token minted by the approval-gated NAT function for this\naction. It carries the entire approved payload; no decision or research\nnote is accepted here.",
+            "type": "string"
+          },
+          "etf_id": {
+            "description": "Exact etf_id.",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Authenticated gateway request ID. Must match the approval token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "etf_id",
+          "approval_token",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "name": "commit_evaluation"
+    },
+    {
+      "description": "Run the deterministic evaluation engine for one ETF and return the investment score, the decision, every score component, matched rules, hard constraints, missing data, data completeness and profile fit. Optionally compare a model recommendation and report whether default policy permits it: a model may be equal or more conservative, never more optimistic. Read-only for ETF state; records the evaluation in the append-only history.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "etf": {
+            "description": "Canonical etf_id, or a ticker/ISIN/name to resolve.",
+            "type": "string"
+          },
+          "llm_recommendation": {
+            "description": "Optional model recommendation to compare with the deterministic decision.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "etf"
+        ],
+        "type": "object"
+      },
+      "name": "evaluate_etf"
+    },
+    {
+      "description": "Read one ETF. Accepts an exact etf_id, or a ticker/ISIN/name which is resolved to one; an ambiguous ticker is reported rather than guessed, because one fund can be cross-listed under the same ticker. Returns verified structured data, untrusted free text, workflow state, data provenance and the deterministic evaluation recomputed now. Never mutates state.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "etf": {
+            "description": "Canonical etf_id, or a ticker/ISIN/name to resolve. A ticker is not\nunique; an ambiguous one is reported rather than guessed.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "etf"
+        ],
+        "type": "object"
+      },
+      "name": "get_etf"
+    },
+    {
+      "description": "Return the append-only history for one ETF: deterministic evaluations, scores, decisions, human approvals, state transitions, assignments, overrides and rationales, with actor, request correlation and the rules/profile versions in force. Returns the most recent events in chronological order and reports whether older events were omitted.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "etf": {
+            "description": "Canonical etf_id, or a ticker/ISIN/name to resolve.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Most recent events to return. Defaults to 50 and is capped at 200.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "etf"
+        ],
+        "type": "object"
+      },
+      "name": "get_etf_history"
+    },
+    {
+      "description": "Return a minimal, explicitly grounded fact bundle for explaining or comparing one ETF. The model must use only these facts and must not invent fund characteristics, fees, holdings, exposures or performance that are not present.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "etf": {
+            "description": "Canonical etf_id, or a ticker/ISIN/name to resolve.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "etf"
+        ],
+        "type": "object"
+      },
+      "name": "get_research_context"
+    },
+    {
+      "description": "Return counts across the ETF research universe: by deterministic decision, by committed decision, by review state, by asset class, by region, by provider, and assigned versus unassigned. This describes research candidates, not holdings; this system has no brokerage connection and owns no positions.",
+      "inputSchema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "get_research_summary"
+    },
+    {
+      "description": "Search the ETF research universe. Every result carries current_evaluation — the deterministic decision and investment score recomputed now from the rules engine and the investor profile — and, separately, workflow.committed_* — what a human previously approved, which is null until they do. The `decision` and `min_investment_score` filters and the descending score ordering all apply to current_evaluation, so they work on a universe nobody has reviewed; `committed_decision` filters the workflow record instead. Listings of one cross-listed fund collapse to a single result unless include_all_listings is true. Filters: query on etf_id/ticker/ISIN/name, provider, asset_class, region, ucits, distribution_policy, replication, review_state, assigned_to, research_needed_only, decision, min_investment_score, committed_decision.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "asset_class": {
+            "description": "equity, bond, commodity, multi_asset or money_market.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assigned_to": {
+            "description": "Exact research owner to filter by.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "committed_decision": {
+            "description": "Committed decision a human already approved: reject, research or\nshortlist. Null for every candidate nobody has decided yet, so this is a\nfilter on workflow history, not on fund quality.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "decision": {
+            "description": "Current deterministic decision from the rules engine, recomputed now:\nreject, research or shortlist. This is not the committed decision.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "distribution_policy": {
+            "description": "accumulating, distributing or none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_all_listings": {
+            "description": "Return every exchange listing separately. By default the listings of one\ncross-listed fund collapse to a single result, because they are one\ninvestment candidate.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "description": "Maximum number of results, applied after deterministic ranking. Defaults\nto 20 and is capped at 50.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_investment_score": {
+            "description": "Minimum current deterministic investment score, 0 to 100.",
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "Issuer name, for example \"Vanguard\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "description": "Free-text match on etf_id, ticker, ISIN or fund name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "description": "Region label, for example \"global\", \"developed_world\", \"emerging\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replication": {
+            "description": "physical, sampled or synthetic.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "research_needed_only": {
+            "description": "Return only candidates still awaiting a decision or in research.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "review_state": {
+            "description": "UNREVIEWED, RESEARCH, SHORTLISTED, ASSIGNED or REJECTED.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ucits": {
+            "description": "Restrict to UCITS-eligible funds when true, or non-UCITS when false.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "name": "search_etfs"
+    },
+    {
+      "description": "Add an ETF to the shortlist after human confirmation. Available from UNREVIEWED or RESEARCH. Pass only etf_id, approval_token and request_id: the grounded research note is read from the signed approval token bound to action=shortlist. When the deterministic decision is only research, shortlisting is a human override and requires a rationale. A non-bypassable hard constraint can never be shortlisted past. Shortlisting records an investment candidate; it does not buy anything.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "approval_token": {
+            "description": "Human approval token minted for action=shortlist. It carries the approved\nresearch note; no note is accepted here.",
+            "type": "string"
+          },
+          "etf_id": {
+            "description": "Exact etf_id.",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Authenticated gateway request ID. Must match the approval token.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "etf_id",
+          "approval_token",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "name": "shortlist_etf"
+    }
+  ]
+}

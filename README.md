@@ -158,6 +158,8 @@ nothing was applied.
 | [DEMO.md](docs/DEMO.md) | A full walkthrough: prompts to type, and what should happen |
 | [ACCEPTANCE.md](docs/ACCEPTANCE.md) | What was claimed, and what establishes it |
 | [EVALUATION_ANALYSIS.md](docs/EVALUATION_ANALYSIS.md) | The measured figures, and how to read them |
+| [AGENT-SERVICE-CONTRACT.md](docs/AGENT-SERVICE-CONTRACT.md) | The agent's HTTP, SSE, approval and MCP contract, as measured on NAT 1.9 |
+| [NAT-FREEZE.md](docs/NAT-FREEZE.md) | What the Rust/Rig migration must preserve, how strictly, and what was found freezing it |
 
 ## Contribute to the curriculum
 
@@ -200,6 +202,7 @@ fails on if the committed bytes stop matching.
 | `evaluation/` | MLflow suites, deterministic scorers, provenance, published results |
 | `db/`, `keycloak/`, `observability/` | Schema, realm generation, collector config |
 | `scripts/` | Checks that run without the cluster, fixture validation, injection payloads, trace tooling |
+| `contracts/nat-1.9/` | The frozen NAT 1.9 behaviour: recorded streams, tool schemas, token vectors, manifest |
 
 ## Notes
 

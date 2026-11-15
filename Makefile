@@ -108,7 +108,7 @@ endif
 	eval-bootstrap-etf eval-bootstrap-policy eval-bootstrap-grounding eval-bootstrap-injection \
 	eval eval-guardrails eval-etf eval-policy eval-grounding eval-injection eval-all \
 	eval-suite-all etf-check rules-test rules-explain docs-check diagrams verify-hitl verify-hitl-audit \
-	eval-all-allow-failures eval-test test
+	eval-all-allow-failures eval-test test nat-freeze-check verify-nat-corpus verify-nat-contract
 
 help: ## Show all available targets
 	@printf "Usage: make <target> [VARIABLE=value]\n\n"
@@ -373,8 +373,28 @@ trace-test: verify-trace-pipeline ## Verify observability end to end against MLf
 traces: ## Print the span tree of the most recent MLflow traces
 	python3 scripts/inspect_mlflow_traces.py --limit $${LIMIT:-3}
 
-static-check: etf-check verify-stream-adapter eval-test-host security-config-test docs-check license-check ## Offline checks needing no Docker, cluster or model (python3 + node + cargo)
+static-check: etf-check verify-stream-adapter verify-nat-corpus eval-test-host security-config-test docs-check license-check nat-freeze-check ## Offline checks needing no Docker, cluster or model (python3 + node + cargo)
 	@echo "Static checks passed."
+
+# The NAT 1.9 freeze (issue #4). contracts/nat-1.9/ records what the NAT agent
+# actually did; docs/NAT-FREEZE.md explains what each record pins and how
+# strictly. The MCP-side records are asserted by `cargo test contract::` (part
+# of rules-test), the gateway's by its own cargo test, the evaluator's by
+# eval-test-host.
+nat-freeze-check: ## Verify the NAT 1.9 freeze manifest: frozen digests, prompts, domain invariants, suite gates
+	python3 scripts/verify_nat_freeze_test.py
+	python3 scripts/verify_nat_freeze.py
+
+verify-nat-corpus: ## Replay the recorded NAT 1.9 SSE corpus through the real UI chat route (node, no install)
+	cd ui && node --experimental-strip-types scripts/verify-nat-corpus.mjs
+
+# Producer-side half of the freeze: re-derives the vectors, prompt options,
+# function schemas, /version fields and interaction-route statuses from the
+# Python agent itself. Needs NAT 1.9 importable, e.g. a venv built from
+# agent/requirements.txt plus `pip install -e agent`.
+PYTHON ?= python3
+verify-nat-contract: ## Re-check the NAT agent against contracts/nat-1.9 (needs NAT 1.9: PYTHON=<venv python>)
+	$(PYTHON) agent/verify_nat_contract.py
 
 license-check: ## agent/ licence copies match the repository-root originals (no dependencies)
 	python3 scripts/verify_agent_package_licenses.py

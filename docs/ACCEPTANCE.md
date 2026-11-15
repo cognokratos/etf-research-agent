@@ -16,12 +16,13 @@ failure is a defect rather than variance.
 
 | Area | Command | Result |
 |---|---|---|
-| Deterministic evaluation engine | `make rules-test` | 85 Rust tests, 20/20 labelled cases, 31/31 funds within range |
-| Authentication gateway | `cargo test` in `gateway/` | 53 tests |
-| Evaluator parsers and scorers | `make static-check` | 82 Python tests |
+| Deterministic evaluation engine | `make rules-test` | 122 Rust tests (1 ignored lab helper), 20/20 labelled cases, 31/31 funds within range |
+| Authentication gateway | `cargo test` in `gateway/` | 55 tests |
+| Evaluator parsers and scorers | `make static-check` | 125 Python tests (3 skip without PyYAML) |
 | Fixture, profile and policy integrity | `make etf-check` | 31 listings / 30 funds, unique IDs, valid ISINs, graded provenance, cross-listings consistent |
 | Security-critical source wiring | `make static-check` | passes |
 | SSE wire contract | `make verify-stream-adapter` | passes |
+| Frozen NAT 1.9 contract ([NAT-FREEZE.md](NAT-FREEZE.md)) | `make nat-freeze-check`, `make verify-nat-corpus`, `cargo test contract::` | recorded SSE corpus through the evaluator and the UI route, MCP tool snapshot, Python→Rust token vectors, manifest digests and gates |
 | Compose topology renders | `docker compose config` | passes |
 
 `make static-check` runs the offline subset in one command, and

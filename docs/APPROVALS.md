@@ -193,6 +193,13 @@ user plainly that nothing was applied. The model is told so explicitly —
 reporting success either way is how an agent ends up telling a user a refused
 change was applied.
 
+That holds for **policy** refusals — state, binding, decision, rationale, note,
+hard constraint. Two refusals are not `200`: a replayed nonce is `409`
+`{"ok": false, "error": "approval token has already been consumed"}` and an
+undecodable token is `400`. The agent raises on any non-2xx, so those reach the
+model as a tool error rather than as `committed: false` (measured; see
+[NAT-FREEZE.md](NAT-FREEZE.md#an-approval-call-can-be-retried-and-so-can-its-prompt)).
+
 ## The audit trail
 
 `audit_events` is append-only by **trigger**, not by convention. A decision

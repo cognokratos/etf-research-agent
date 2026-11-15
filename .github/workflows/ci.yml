@@ -61,6 +61,13 @@ jobs:
           python3 scripts/verify_docs_test.py
           python3 scripts/verify_docs.py
 
+      # contracts/nat-1.9/: the frozen NAT behaviour the agent-runtime migration
+      # must preserve. Digests, prompts, domain invariants and suite gates.
+      - name: NAT 1.9 freeze manifest
+        run: |
+          python3 scripts/verify_nat_freeze_test.py
+          python3 scripts/verify_nat_freeze.py
+
       - name: Agent licence copies match the repository root
         run: python3 scripts/verify_agent_package_licenses.py
 
@@ -169,6 +176,11 @@ jobs:
       - name: NAT SSE wire contract
         working-directory: ui
         run: npm run verify:nat-wire
+
+      # The recorded NAT 1.9 streams, through the real chat route.
+      - name: NAT 1.9 contract corpus
+        working-directory: ui
+        run: npm run verify:nat-corpus
 
       - name: Build
         working-directory: ui

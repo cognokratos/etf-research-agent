@@ -1,0 +1,151 @@
+{
+  "_comment": "Measured, not designed. HTTP outcomes of the human-approval surfaces under NAT 1.9 at 87daaa3. 'in_process' drives NAT's real add_execution_routes with the real OwnerAwareExecutionStore and ResponderIdentityMiddleware (recording/interaction_status.py); 'live' rows come from the recorded corpus against the running agent; 'mcp_execute' drives the real Rust MCP server's POST /approvals/execute with tokens from the real Python minter.",
+  "interaction_response_route": {
+    "path": "POST /executions/{execution_id}/interactions/{interaction_id}/response",
+    "in_process": [
+      {
+        "case": "radio offered pair, owner",
+        "status": 204,
+        "body": ""
+      },
+      {
+        "case": "radio cancel, owner",
+        "status": 204,
+        "body": ""
+      },
+      {
+        "case": "radio offered pair, NOT owner",
+        "status": 500,
+        "body": "Internal Server Error"
+      },
+      {
+        "case": "radio unoffered value",
+        "status": 500,
+        "body": "Internal Server Error"
+      },
+      {
+        "case": "radio wrong type (text)",
+        "status": 500,
+        "body": "Internal Server Error"
+      },
+      {
+        "case": "binary confirm",
+        "status": 204,
+        "body": ""
+      },
+      {
+        "case": "binary cancel",
+        "status": 204,
+        "body": ""
+      },
+      {
+        "case": "text rationale",
+        "status": 204,
+        "body": ""
+      },
+      {
+        "case": "text empty",
+        "status": 204,
+        "body": ""
+      },
+      {
+        "case": "unknown execution",
+        "status": 404,
+        "body": "{\"detail\":\"'Execution nope not found'\"}"
+      },
+      {
+        "case": "already answered",
+        "status": 400,
+        "body": "{\"detail\":\"Interaction 058c2bb2-a75f-4e68-bdd7-dc88d750c189 has already been resolved\"}"
+      },
+      {
+        "case": "GET status by non-owner",
+        "status": 200,
+        "body": "{\"execution_id\":\"7e0043fe-e41f-4c80-a26f-3d36b3cc8338\",\"status\":\"interaction_required\",\"in... (full pending prompt, including its text)"
+      }
+    ],
+    "live_corpus": "sse/commit-confirm-radio.json: non-owner, unoffered value and wrong response type each answered 500; the owner's offered choice 204 and the prompt stayed pending until then",
+    "why_500": "InteractionAuthorizationError subclasses Exception; NAT's route maps only KeyError->404 and ValueError->400, so every guard refusal surfaces as an unhandled 500. The refusal is correct; its status code is not a designed contract.",
+    "gateway_relay": "gateway/src/proxy.rs interaction_response relays the agent status and body unchanged; the UI treats any 2xx as accepted"
+  },
+  "client_disconnect_while_pending": {
+    "probe": "recording/disconnect.py",
+    "observed": {
+      "execution_status_after_disconnect": "interaction_required",
+      "respond_after_disconnect": 204,
+      "execution_status_after_response": "running",
+      "effect": "VJPN-LSE moved UNREVIEWED -> RESEARCH; the mutation was applied with no client attached"
+    },
+    "prompt_timeout": "null on every recorded prompt (HumanPrompt.timeout unset): a pending approval never expires while the process lives"
+  },
+  "mcp_execute": {
+    "path": "POST {mcp}/approvals/execute  body {approval_token, request_id}",
+    "cases": [
+      {
+        "case": "valid commit token",
+        "status": 200,
+        "body_shape": {
+          "ok": true,
+          "result": "<commit result object>"
+        }
+      },
+      {
+        "case": "commit token replayed (state precondition fires first)",
+        "status": 200,
+        "body": {
+          "ok": false,
+          "result": "Only unreviewed ETFs can take an initial decision; 'XNIF-XETRA' is REJECTED. Re-deciding a reviewed candidate is a separate action and is not implemented."
+        }
+      },
+      {
+        "case": "expected_choice differs from the recomputed engine decision",
+        "status": 200,
+        "body": {
+          "ok": false,
+          "result": "Human approval rejected: approval token was issued against a different deterministic decision"
+        }
+      },
+      {
+        "case": "request_id differs from the token",
+        "status": 200,
+        "body": {
+          "ok": false,
+          "result": "Human approval rejected: approval token is not bound to this authenticated request"
+        }
+      },
+      {
+        "case": "shortlist of a non-UCITS fund with rationale (hard constraint)",
+        "status": 200,
+        "body": {
+          "ok": false,
+          "result": "Hard constraint HC-UCITS: The investor profile requires UCITS eligibility and this fund is not UCITS. Change require_ucits in the investor profile to consider it; no human approval can bypass this."
+        }
+      },
+      {
+        "case": "assign token replayed (nonce primary key)",
+        "status": 409,
+        "body": {
+          "error": "approval token has already been consumed",
+          "ok": false
+        }
+      },
+      {
+        "case": "undecodable or badly signed token",
+        "status": 400,
+        "body": ""
+      },
+      {
+        "case": "missing request_id field",
+        "status": 422,
+        "body": "Failed to deserialize the JSON body into the target type: missing field `request_id` ..."
+      },
+      {
+        "case": "no MCP API key",
+        "status": 401,
+        "body": "invalid or missing internal API key"
+      }
+    ],
+    "agent_handling": "approval._execute_blocking: 2xx -> committed = body.ok; any HTTPError (400/401/409/422/5xx) raises ValueError('The approved change was rejected: <body>'), which NAT hands back to the model as a tool error rather than the structured committed=false result."
+  },
+  "approval_function_retry": "sse/commit-without-request-id: when an approval function raises, NAT re-invokes it (tool_call_max_retries: 2; two FUNCTION_START/END pairs recorded). A raise that happens after the human answered (any MCP HTTP error above) would therefore prompt the human again for the same action. Inferred from the recorded retry; the post-approval case was not recorded."
+}

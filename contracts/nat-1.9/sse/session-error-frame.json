@@ -1,0 +1,6 @@
+{
+  "scenario": "session-error-frame",
+  "synthetic": true,
+  "source": "nat/front_ends/fastapi/http_interactive_runner.py _streaming_generator_impl: yield f\"event: error\\ndata: {item.model_dump_json()}\\n\\n\"",
+  "reachability": "Not reached by any recorded scenario; RequireIdentityHeaderMiddleware refuses the identity case with 401 before NAT runs. Kept because both consumers silently ignore this framing."
+}

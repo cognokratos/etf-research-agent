@@ -1,0 +1,377 @@
+{
+  "_comment": "Measured against the real NAT 1.9 agent (agent/config.yml, fastapi_worker.AuthenticatedFastApiFrontEndPluginWorker) at 87daaa3 on 2026-11-15. Values, not documentation.",
+  "served_routes_from_openapi": [
+    "GET /auth/redirect",
+    "GET /executions/{execution_id}",
+    "GET /health",
+    "GET /mcp/client/tool/list",
+    "GET /mcp/client/tool/list/per_user",
+    "POST /evaluate/item",
+    "POST /executions/{execution_id}/interactions/{interaction_id}/response",
+    "POST /v1/chat",
+    "POST /v1/chat/completions",
+    "POST /v1/chat/stream",
+    "POST /v1/workflow",
+    "POST /v1/workflow/atif",
+    "POST /v1/workflow/full",
+    "POST /v1/workflow/stream"
+  ],
+  "auth_matrix": {
+    "GET /health": {
+      "no_key": {
+        "status": 200,
+        "body": "{\"status\":\"healthy\"}",
+        "www_authenticate": null
+      },
+      "wrong_key": {
+        "status": 200,
+        "body": "{\"status\":\"healthy\"}",
+        "www_authenticate": null
+      },
+      "key_no_identity": {
+        "status": 200,
+        "body": "{\"status\":\"healthy\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 200,
+        "body": "{\"status\":\"healthy\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 200,
+        "body": "{\"status\":\"healthy\"}",
+        "www_authenticate": null
+      }
+    },
+    "GET /health/live": {
+      "no_key": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "wrong_key": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "key_no_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      }
+    },
+    "GET /health/ready": {
+      "no_key": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "wrong_key": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "key_no_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      }
+    },
+    "GET /version": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 200,
+        "body": "<omitted>",
+        "www_authenticate": null
+      },
+      "key_repeated_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}"
+      }
+    },
+    "POST /v1/workflow/full": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": "200 text/event-stream (see sse/ corpus)"
+    },
+    "GET /v1/workflow/full": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 405,
+        "body": "{\"detail\":\"Method Not Allowed\"}",
+        "www_authenticate": null
+      }
+    },
+    "GET /docs": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 200,
+        "body": "<omitted>",
+        "www_authenticate": null
+      }
+    },
+    "GET /openapi.json": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 200,
+        "body": "<omitted>",
+        "www_authenticate": null
+      }
+    },
+    "GET /no-such-route": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Not Found\"}",
+        "www_authenticate": null
+      }
+    },
+    "GET /executions/00000000-0000-4000-8000-000000000000": {
+      "no_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "wrong_key": {
+        "status": 401,
+        "body": "{\"error\":\"invalid or missing internal API key\"}",
+        "www_authenticate": "Bearer"
+      },
+      "key_no_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_blank_identity": {
+        "status": 401,
+        "body": "{\"error\":\"missing or ambiguous authenticated identity\"}",
+        "www_authenticate": null
+      },
+      "key_identity": {
+        "status": 404,
+        "body": "{\"detail\":\"Execution 00000000-0000-4000-8000-000000000000 not found\"}",
+        "www_authenticate": null
+      }
+    }
+  },
+  "version_response": {
+    "available": true,
+    "model": "scripted",
+    "guard_model": "scripted",
+    "reasoning_effort": "",
+    "guard_reasoning_effort": "",
+    "build_commit": "87daaa3139849a77fe83cb3905d3aee8c53b14e7",
+    "config_path": "<absolute path of the loaded config; /app/config.yml in the image>",
+    "config_sha256": "3c34e023632ae8a7b031c4c1ae00d2c84b312255c768cadb2358dcec4fc14e60",
+    "prompt_sha256": "00df814231c96d803f9c112d069280644b403ec2d9ff359dc6845166cddf776b",
+    "guardrails_prompts_sha256": "957a8d87fea2b2413feae4a2b429f22bb052b13b3bd3b57a4bf1569a8763ccbb",
+    "tools_exposed": [
+      "evaluate_etf",
+      "get_etf",
+      "get_etf_history",
+      "get_research_context",
+      "get_research_summary",
+      "search_etfs"
+    ]
+  },
+  "version_field_names": [
+    "available",
+    "build_commit",
+    "config_path",
+    "config_sha256",
+    "guard_model",
+    "guard_reasoning_effort",
+    "guardrails_prompts_sha256",
+    "model",
+    "prompt_sha256",
+    "reasoning_effort",
+    "tools_exposed"
+  ],
+  "workflow_request_validation": {
+    "_comment": "Direct POST /v1/workflow/full with key and identity, bypassing the gateway (as the evaluator does). NAT itself validates only that the body is JSON with messages or input_message; roles, final-turn and unknown fields are enforced by the gateway alone.",
+    "cases": {
+      "not json": {
+        "status": 422,
+        "body": "{\"detail\":[{\"type\":\"json_invalid\",\"loc\":[\"body\",1],\"msg\":\"JSON decode error\",\"input\":{},\"ctx\":{\"error\":\"Expecting property name enclosed in double quotes\"}}]}"
+      },
+      "empty object": {
+        "status": 422,
+        "body": "{\"detail\":[{\"type\":\"value_error\",\"loc\":[\"body\"],\"msg\":\"Value error, Either messages or input_message must be provided\",\"input\":{},\"ctx\":{\"error\":{}}}]}"
+      },
+      "empty messages": {
+        "status": 200,
+        "non_step_frames": [
+          "{\"code\":\"workflow_error\",\"message\":\"No input received in state: \\\"messages\\\"\",\"details\":\"RuntimeError\"}"
+        ]
+      },
+      "system role": {
+        "status": 200,
+        "non_step_frames": [
+          "data: {\"value\": \"CSPX-LSE: the deterministic engine decided \"}",
+          "data: {\"value\": \"shortlist\"}",
+          "... 11 more answer frames"
+        ]
+      },
+      "tool role": {
+        "status": 200,
+        "non_step_frames": [
+          "{\"code\":\"workflow_error\",\"message\":\"'tool_call_id'\",\"details\":\"KeyError\"}"
+        ]
+      },
+      "last turn assistant": {
+        "status": 200,
+        "non_step_frames": [
+          "data: {\"value\": \"CSPX-LSE: the deterministic engine decided \"}",
+          "data: {\"value\": \"shortlist\"}",
+          "... 11 more answer frames"
+        ]
+      },
+      "unknown top-level field": {
+        "status": 200,
+        "non_step_frames": [
+          "data: {\"value\": \"CSPX-LSE: the deterministic engine decided \"}",
+          "data: {\"value\": \"shortlist\"}",
+          "... 11 more answer frames"
+        ]
+      },
+      "empty content": {
+        "status": 200,
+        "non_step_frames": []
+      }
+    }
+  }
+}

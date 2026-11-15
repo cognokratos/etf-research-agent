@@ -247,6 +247,13 @@ impl EtfMcpServer {
         }
     }
 
+    /// The published MCP tool list, for the frozen-contract tests. Test-only:
+    /// `tool_router` is generated private.
+    #[cfg(test)]
+    pub(crate) fn published_tool_list() -> Vec<Tool> {
+        Self::tool_router().list_all()
+    }
+
     /// The approval verifier, so the HTTP layer can read a token's action before
     /// dispatching to the tool that will verify it in full.
     pub fn approvals(&self) -> &ApprovalVerifier {

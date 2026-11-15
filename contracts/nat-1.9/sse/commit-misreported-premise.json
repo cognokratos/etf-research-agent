@@ -1,0 +1,79 @@
+{
+  "scenario": "commit-misreported-premise",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Commit the decision for XAIX-XETRA"
+        }
+      ]
+    },
+    "identity": "researcher-1",
+    "sent_x_request_id": true
+  },
+  "interactions": [
+    {
+      "prompt_event": {
+        "event_type": "interaction_required",
+        "execution_id": "7c8d2572-0ae6-42f6-afb3-14fb4ba1810a",
+        "interaction_id": "36cd6d88-4e6f-48e3-b369-d663358b83f9",
+        "prompt": {
+          "text": "ETF: XAIX-XETRA\nAction: commit review decision\nDeterministic engine (authoritative): shortlist\nDefault decision: shortlist\nModel-drafted research note (not verified by a human; will be signed and recorded verbatim if you approve): Model-drafted note.\nSummary: Recorded for the NAT freeze corpus.\nConfirm the deterministic decision, or choose a different one. Any change is an explicit human override and requires a rationale.\nThis records a research decision only. Nothing is bought, sold or held.",
+          "timeout": null,
+          "error": "This prompt is no longer available.",
+          "options": [
+            {
+              "id": "reject",
+              "label": "Override — reject",
+              "value": "reject",
+              "description": "Requires a rationale, recorded against your identity."
+            },
+            {
+              "id": "research",
+              "label": "Override — research",
+              "value": "research",
+              "description": "Requires a rationale, recorded against your identity."
+            },
+            {
+              "id": "shortlist",
+              "label": "Confirm — shortlist",
+              "value": "shortlist",
+              "description": "The deterministic engine's decision. Applied with no override."
+            },
+            {
+              "id": "cancel",
+              "label": "Cancel",
+              "value": "__CANCEL__",
+              "description": "Change nothing."
+            }
+          ],
+          "input_type": "radio"
+        },
+        "response_url": "/executions/7c8d2572-0ae6-42f6-afb3-14fb4ba1810a/interactions/36cd6d88-4e6f-48e3-b369-d663358b83f9/response"
+      },
+      "responses": [
+        {
+          "sent": {
+            "response": {
+              "type": "radio",
+              "selected_option": {
+                "id": "shortlist",
+                "label": "shortlist",
+                "value": "shortlist",
+                "description": ""
+              }
+            },
+            "user": "researcher-1"
+          },
+          "status": 204,
+          "body": ""
+        }
+      ]
+    }
+  ]
+}

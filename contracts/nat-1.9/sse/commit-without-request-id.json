@@ -1,0 +1,19 @@
+{
+  "scenario": "commit-without-request-id",
+  "recorded": {
+    "status": 200,
+    "content_type": "text/event-stream; charset=utf-8",
+    "x_request_id": null,
+    "filter_steps": "TOOL_START,TOOL_END,FUNCTION_START,FUNCTION_END",
+    "request": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Commit without request id for INRG-LSE"
+        }
+      ]
+    },
+    "identity": "researcher-1",
+    "sent_x_request_id": false
+  }
+}
